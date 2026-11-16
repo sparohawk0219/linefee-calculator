@@ -16,6 +16,17 @@ Python 3.10 이상.
 
     streamlit run app.py      # 대시보드 (http://localhost:8501)
 
+## 사용자 역할과 데이터 파일
+
+처음 화면은 일반 사용자(세일즈)다. 로그인 없이 거래를 넣고 결과를 본다. 은행 파라미터, 시뮬레이션 설정, 시장 데이터 기준,
+거래상대방 마스터는 관리자만 고친다 (사이드바의 `관리자 로그인`).
+
+- 관리자 비밀번호: `.streamlit/secrets.toml.example`을 `.streamlit/secrets.toml`로 복사해 `admin_password`를 바꾼다. 이 파일이 없으면 관리자 로그인은 막힌다.
+- 데이터 디렉터리: 환경 변수 `LINEFEE_DATA_DIR`(없으면 저장소의 `data/`). 관리자가 `저장`을 누르면 여기에 쓰고, 모든 사용자의 계산에 쓰인다.
+  - `counterparties.csv`: 거래상대방 마스터 (열: name, grade, pd_pct, csa, dealer_line, credit_rw_pct, ba_cva_sector). 없으면 가명 샘플 `data/counterparties.sample.csv`를 읽는다. 엑셀에서 UTF-8 CSV로 만들어도 된다.
+  - `bank_params.json`: 저장한 은행 파라미터. 없으면 엔진 기본값.
+  - 둘 다 실데이터라 gitignore 대상이다.
+
 ## 시장 스냅샷 (로컬 전용)
 
 시장 데이터는 블룸버그 라이선스 데이터라 저장소에 없다 (DECISIONS O1). 스냅샷이 없으면 앱과 테스트는 안내를 출력하고 멈춘다.
