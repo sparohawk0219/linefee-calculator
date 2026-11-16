@@ -22,6 +22,7 @@ import numpy as np
 import QuantLib as ql
 
 from market_data import SNAPSHOT as LEGACY_SNAPSHOT
+from market_data import years_ago
 
 from . import curves as cv
 from .curves import Curve
@@ -92,7 +93,7 @@ def fetch(years: int = 5, path: Path = SNAPSHOT) -> dict:
                 snap["missing"].append(t)
 
     end = date.today()
-    start = date(end.year - years, end.month, end.day)
+    start = years_ago(end, years)
     series = {k: dict(bdh(t, "PX_LAST", start.strftime("%Y%m%d"), end.strftime("%Y%m%d")))
               for k, t in HIST_TICKERS.items()}
     days = sorted(set.intersection(*(set(v) for v in series.values())))

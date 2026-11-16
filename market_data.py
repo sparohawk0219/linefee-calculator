@@ -38,6 +38,14 @@ TICKERS = {
 }
 
 
+def years_ago(end: date, years: int) -> date:
+    """end의 years년 전 같은 날. 2월 29일이 없는 해는 2월 28일로 (date(y-n, 2, 29) ValueError 방지)."""
+    try:
+        return end.replace(year=end.year - years)
+    except ValueError:
+        return end.replace(year=end.year - years, day=28)
+
+
 def fetch(path: Path | None = None) -> dict:
     """블룸버그 PX_LAST를 받아 path에 저장한다 (path가 None이면 저장하지 않는다).
     회귀 기준 스냅샷(SNAPSHOT)은 기본으로 덮어쓰지 않는다. 값이 없는 테너는 빠진다."""
@@ -86,7 +94,7 @@ def fetch_hist(years: int = 5, path: Path | None = None) -> dict:
     from bbg import bdh
 
     end = date.today()
-    start = date(end.year - years, end.month, end.day)
+    start = years_ago(end, years)
     series = {k: dict(bdh(t, "PX_LAST", start.strftime("%Y%m%d"), end.strftime("%Y%m%d")))
               for k, t in HIST_TICKERS.items()}
     days = sorted(set.intersection(*(set(v) for v in series.values())))
