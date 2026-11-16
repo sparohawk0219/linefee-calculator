@@ -809,6 +809,37 @@ if res:
     if res["sig"] != input_signature():
         st.warning("계산 후 입력이 바뀌었습니다. 아래 결과는 이전 입력 기준입니다. '계산'을 다시 누르세요.")
     hb = r.breakeven_hurdle()
+    # 입력 요약: 이 결과를 계산한 입력 (지금 화면의 입력이 아니라 계산 때 저장한 것)
+    ct = res["client_no_fee"]
+    leg_txt = " / ".join(
+        f"{'은행 수취' if l.direction == 'receive' else '은행 지급'} {l.notional / UNIT[l.ccy][0]:,.2f}{UNIT[l.ccy][1]} "
+        f"({leg_words(l)})" for l in ct.legs)
+    if res["loc"] == "upfront":
+        fee_txt = f"upfront {res['upfront'] / OKU:,.2f}억원"
+    else:
+        fee_num = res["fee"] * (1 if fx_mode else 1e4) * (100 if qu == 100 else 1)
+        fee_txt = f"{fee_num:,.2f}{'원/100엔' if qu == 100 else '원/외화 1단위'}" if fx_mode else f"연 {fee_num:,.2f}bp"
+        fee_txt += f" ({fee_loc_label(res['loc'], fx_mode)})"
+        if res["upfront"]:
+            fee_txt += f", upfront {res['upfront'] / OKU:,.2f}억원"
+    hk = {"btb": "BTB", "line": "딜러 라인 Par", "ccp": "CCP", "direct": "직접 입력"}[res["hedge_kind"]]
+    st.markdown(
+        f"**입력 요약** (이 결과를 계산한 입력)  \n"
+        f"상품 {PRODUCTS[ct.product]}, 만기 {ct.maturity:g}년  \n"
+        f"{leg_txt}  \n"
+        f"고객 {deal.client.name}, 헤지 {deal.dealer.name} ({hk}), 라인피 {fee_txt}")
+    be_line = ("0% 미만 (어떤 요구수익률에서도 손실)" if hb is None
+               else (f"{hb:.1%}" if hb < 0.5 else "50% 이상 (찾는 범위 0~50% 밖이라 숫자가 아니라 '50% 이상'으로 읽는다. 50%까지 올려도 이익이 남는다)"))
+    if res["loc"] != "upfront" and res["hedge_kind"] != "direct":
+        fee_ask = (f"- 손익분기 라인피: **{fmt(res['fee'] + be.extra)}** (제안 {fmt(res['fee'])} → "
+                   f"{'부족' if be.extra > 0 else '충분 (여유)'} {fmt(abs(be.extra))})")
+    else:
+        fee_ask = None
+    st.markdown("**한눈에** (묻는 숫자)  \n"
+                f"- 자본비용 반영 손익: **{r.net / OKU:+,.2f}억원** ({'이익' if r.net >= 0 else '손실'})  \n"
+                f"- 첫날 이익: {r.day1 / OKU:,.2f}억원 (아래 단계별 표의 첫 줄과 같은 값)  \n"
+                + (fee_ask + "  \n" if fee_ask else "")
+                + f"- 손익분기 세후 요구수익률: {be_line}")
     if res["hedge_kind"] in ("line", "ccp"):
         ht = deal.hedge_trade
         terms = " / ".join(
@@ -818,7 +849,7 @@ if res:
             for l in ht.legs)
         st.caption(f"{'CCP' if res['hedge_kind'] == 'ccp' else '딜러 라인'} Par 헤지 조건 (거래일 가치 0): {terms}")
     k = st.columns(4)
-    k[0].metric("첫날 이익", f"{r.day1 / OKU:,.1f}억", f"고객 {r.v0_client / OKU:,.1f} / 헤지 {r.v0_hedge / OKU:,.1f}",
+    k[0].metric("첫날 이익", f"{r.day1 / OKU:,.2f}억", f"고객 {r.v0_client / OKU:,.2f} / 헤지 {r.v0_hedge / OKU:,.2f}",
                 delta_color="off")
     k[1].metric("회계 손익 (E/L만 차감)", f"{r.accounting_net / OKU:,.2f}억", f"{conv(r.accounting_net):+.2f} {UL}")
     k[2].metric("자본비용 반영 손익", f"{r.net / OKU:,.2f}억", f"{conv(r.net):+.2f} {UL}",
