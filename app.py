@@ -5,8 +5,10 @@
 거래 1건(고객)과 헤지(미러 자동 또는 직접 입력)를 넣으면 비용과 손익분기 수수료를 계산한다.
 방법론과 근사 사항: docs/METHODOLOGY_v1.md
 """
+import hmac
 import importlib
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import altair as alt
@@ -50,11 +52,12 @@ from linefee.pricing import (Run, annual_pnl, breakeven, fee_unit_pv, market_gap
                              market_hedge, par_client, run)
 from linefee.trade import (BA_CVA_RW, CCP_REG_MPOR_DAYS, CSA, BankParams, Counterparty, Leg, Trade,  # noqa: E402
                            build_deal, fee_delta)
+from ui import store  # noqa: E402
 
 OKU = 1e8
 CCYS = ["KRW", "USD", "JPY"]
 UNIT = {"KRW": (1e8, "억원"), "JPY": (1e8, "억엔"), "USD": (1e6, "백만달러")}
-CSA_TYPES = {"없음 (무담보)": CSA(), "VM": CSA(vm=True), "VM + IM": CSA(vm=True, im=True)}
+CCP_NAME, CCP_RW = "CCP (KRX·LCH)", 0.02   # 원화 IRS·달러 OIS의 헤지 상대: 적격 CCP 고정 (거래 익스포저 위험가중치 2%)
 SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100"]   # 범주색 1~4번 (고정 순서)
 BTB, LINE, DIRECT = "BTB (헤지도 같은 오프마켓, 라인피 제외)", "딜러 라인 (Par 헤지)", "직접 입력 (BTB 헤지 조건)"
 HEDGE_MODES = {BTB: "btb", LINE: "line", DIRECT: "direct"}
@@ -116,11 +119,12 @@ def _set_leg(prefix, ccy, amt, kind="fixed", rate=0.0, spread=0.0, freq=1, dc="A
     ss[prefix + "freq"], ss[prefix + "dc"], ss[prefix + "fx_end"] = freq, dc, fx_end
 
 
-def _set_cp(prefix, name, rw, sector, grade, pd_, csa):
+def _set_names(client, dealer=None):
+    """예시의 상대방: 마스터 이름 (로컬 마스터에 없으면 화면을 그릴 때 샘플 행을 쓴다)."""
     ss = st.session_state
-    ss[prefix + "name"], ss[prefix + "rw"] = name, float(rw)
-    ss[prefix + "sector"], ss[prefix + "grade"] = sector, grade
-    ss[prefix + "pd"], ss[prefix + "lgd"], ss[prefix + "csa"] = float(pd_), 60.0, csa
+    ss["cl_name"] = ss["_preset_cl_name"] = client
+    if dealer:
+        ss["dl_name"] = ss["_preset_dl_name"] = dealer
 
 
 def load_preset():
@@ -132,8 +136,7 @@ def load_preset():
         ss["product"], ss["mat"] = "CCS", 30.0
         _set_leg("cr_", "KRW", 100 * m.spot_quote["JPY"], rate=4.03, dc="ACT/360")
         _set_leg("cp_", "JPY", 100, rate=4.07)
-        _set_cp("cl_", "공공기관 A", 0.0, "지방정부·정부보증 비금융·공공기관", "투자등급", 0.0, "없음 (무담보)")
-        _set_cp("dl_", "딜러 B", 50.0, "금융기관(정부보증 금융 포함)", "투자등급", 0.0, "VM + IM")
+        _set_names("공공기관 A", "딜러 B")
         ss["h_mode"], ss["fee_loc"], ss["fee_bp"] = BTB, "고객 다리 running", 10.0
     elif name == "USD/KRW 5년 CCS (기업)" and "USD" in m.spot:
         ss["product"], ss["mat"] = "CCS", 5.0
@@ -143,8 +146,7 @@ def load_preset():
         par = par_client(probe, m).legs[0].rate
         _set_leg("cr_", "KRW", 100 * m.spot_quote["USD"] / 100, rate=round(par * 100, 4), freq=4, dc="ACT/365")
         _set_leg("cp_", "USD", 100, kind="float", spread=0.0, freq=4, dc="ACT/360")
-        _set_cp("cl_", "기업 고객", 100.0, "소재·에너지·산업재·농업·제조·광업", "투자등급", 0.2, "없음 (무담보)")
-        _set_cp("dl_", "헤지 딜러", 50.0, "금융기관(정부보증 금융 포함)", "투자등급", 0.0, "VM + IM")
+        _set_names("기업 C", "딜러 B")
         ss["h_mode"], ss["fee_loc"], ss["fee_bp"] = LINE, "고객 다리 running", 10.0
     elif name == "USD/KRW 1년 FX 선도 (기업)" and "USD" in m.spot:
         ss["product"], ss["mat"] = "FXFWD", 1.0
@@ -152,8 +154,7 @@ def load_preset():
         fwd = par_client(probe, m).legs[0].notional / 1e8      # 시장 선도환율 (스왑포인트 기준)
         _set_leg("cr_", "KRW", 100 * fwd / 100, fx_end=True)
         _set_leg("cp_", "USD", 100, fx_end=True)
-        _set_cp("cl_", "기업 고객", 100.0, "소재·에너지·산업재·농업·제조·광업", "투자등급", 0.2, "없음 (무담보)")
-        _set_cp("dl_", "헤지 딜러", 50.0, "금융기관(정부보증 금융 포함)", "투자등급", 0.0, "VM")
+        _set_names("기업 C", "딜러 D")
         ss["h_mode"], ss["fee_loc"], ss["fee_fx"] = LINE, "고객 선도환율 마진", 1.0
     elif name.startswith(("원화 IRS", "달러 OIS")):
         krw = name.startswith("원화")
@@ -162,7 +163,7 @@ def load_preset():
             return
         ss["product"], ss["mat"] = ("KRWIRS", 5.0) if krw else ("USDOIS", 3.0)
         ss["irs_amt"], ss["irs_dir"], ss["irs_spread"] = (1000.0 if krw else 100.0), IRS_DIRS[0], 0.0
-        _set_cp("cl_", "기업 고객", 100.0, "소재·에너지·산업재·농업·제조·광업", "투자등급", 0.2, "없음 (무담보)")
+        _set_names("기업 C")
         ss["fee_loc"], ss["fee_bp"] = "고객 다리 running", 5.0
     if ss.get("product") in IRS_CONV:   # 시장 기준이 바뀌어도 고정금리를 그 시장의 파 금리로
         set_irs_par()
@@ -264,13 +265,13 @@ if "initialized" not in st.session_state:
     st.session_state["market_src"] = list(MARKETS)[0]
     st.session_state["preset"] = "엔/원 30년 CCS (공공기관 A 중개)"
     load_preset()
-for _k, _v in {"ccp_name": "CCP (KRX·LCH)", "ccp_rw": 2.0, "irs_amt": 1000.0, "irs_dir": IRS_DIRS[0],
+for _k, _v in {"irs_amt": 1000.0, "irs_dir": IRS_DIRS[0],
                "irs_rate": 0.0, "irs_spread": 0.0, "fee_bp": 10.0, "fee_fx": 1.0}.items():
     st.session_state.setdefault(_k, _v)
 
 # 화면에 그리지 않은 위젯의 session_state는 Streamlit이 지운다 (예: IRS·OIS 화면에서는 두 다리 위젯이 없다).
 # 통화스왑으로 돌아왔을 때 입력이 사라지지 않게 다리 입력은 따로 보관했다가 없어졌으면 되돌려 놓는다 (L-012).
-_KEEP_PREFIXES = ("cr_", "cp_", "hr_", "hp_")
+_KEEP_PREFIXES = ("cr_", "cp_", "hr_", "hp_", "dl_name")
 _keep = st.session_state.setdefault("_leg_keep", {})
 for _k, _v in _keep.items():
     st.session_state.setdefault(_k, _v)
@@ -318,22 +319,11 @@ def irs_inputs(product: str) -> Trade:
     return make_irs(product)
 
 
-def cp_inputs(prefix: str, title: str) -> Counterparty:
-    st.markdown(f"**{title}**")
-    name = st.text_input("이름", key=prefix + "name")
-    c1, c2 = st.columns(2)
-    rw = c1.number_input("신용 위험가중치 (%)", key=prefix + "rw", min_value=0.0, step=10.0,
-                         help="표준방법. 예: 공공기관은 결손보전 기관 0%(별표3 32.가), 그 외 20~50%(32.나·다), "
-                              "은행·동등 증권사 A등급 30%·BBB 50%, 기업 무등급 100%")
-    csa_name = c2.selectbox("CSA", list(CSA_TYPES), key=prefix + "csa")
-    sector = st.selectbox("BA-CVA 업종", list(BA_CVA_RW), key=prefix + "sector")
-    c3, c4, c5 = st.columns(3)
-    grade = c3.selectbox("등급", ["투자등급", "투기등급·무등급"], key=prefix + "grade")
-    pd_ = c4.number_input("연 PD (%)", key=prefix + "pd", min_value=0.0, step=0.05, format="%.2f")
-    lgd = c5.number_input("LGD (%)", key=prefix + "lgd", min_value=0.0, max_value=100.0, step=5.0)
-    cva_rw = BA_CVA_RW[sector][0 if grade == "투자등급" else 1]
-    st.caption(f"BA-CVA 위험가중치 {cva_rw:.1%}")
-    return Counterparty(name, rw / 100, cva_rw, pd_ / 100, lgd / 100, CSA_TYPES[csa_name])
+def cp_pick(key: str, title: str, names: list, master: dict) -> Counterparty:
+    """마스터에서 이름으로 상대방을 고른다. 등급·PD·위험가중치는 보여 주지 않는다 (관리자가 마스터에서 관리)."""
+    name = st.selectbox(title, names, key=key)
+    st.caption(f"CSA: {master[name]['csa']}")
+    return store.counterparty(master[name])
 
 
 # ---------------------------------------------------------------------------
@@ -374,55 +364,236 @@ st.title("라인피 계산기")
 st.caption("장외파생 1건 + 헤지의 E/L·FVA·MVA·KVA와 손익분기 수수료 (v1, 단독 기준). "
            "방법론: docs/METHODOLOGY_v1.md")
 
+ss = st.session_state
+admin = ss.get("role") == "admin"
+NEW_ROW = "(새 상대방)"
+saved_params = store.load_params()
+
+
+def _admin_secret():
+    """비밀값의 관리자 비밀번호. 비밀값 파일이나 키가 없으면 None (st.secrets 접근이 예외를 낼 수 있다)."""
+    try:
+        pw = st.secrets["admin_password"]
+    except Exception:  # noqa: BLE001  FileNotFoundError, KeyError 등
+        return None
+    return pw if isinstance(pw, str) and pw else None
+
+
+def do_login():
+    typed, secret = ss.get("admin_pw", ""), _admin_secret()
+    ss["admin_pw"] = ""
+    if secret is None:
+        ss["_login_msg"] = ("warning", "관리자 비밀번호가 설정되지 않았습니다. 관리자 로그인을 쓸 수 없습니다.")
+    elif hmac.compare_digest(typed.encode("utf-8"), secret.encode("utf-8")):
+        ss["role"] = "admin"
+        ss["adm_master"] = {k: dict(v) for k, v in store.load_master()[0].items()}
+        ss.pop("_login_msg", None)
+    else:
+        ss["_login_msg"] = ("error", "비밀번호가 맞지 않습니다.")
+
+
+def do_logout():
+    for k in ("role", "adm_master", "_adm_msg"):
+        ss.pop(k, None)
+    if ss.get("market_src") != list(MARKETS)[0]:   # 일반 사용자는 기본 시장 기준
+        ss["market_src"] = list(MARKETS)[0]
+        load_preset()
+
+
+def on_market_change():
+    ss["market_src"] = ss["adm_market_src"]
+    load_preset()
+
+
 with st.sidebar:
     st.header("시장 데이터")
-    st.selectbox("기준", list(MARKETS), key="market_src", on_change=load_preset,
-                 help="바꾸면 선택한 예시 거래를 그 시장 기준(현물환율)으로 다시 불러온다")
-    m = get_market(MARKETS[st.session_state["market_src"]])
-    st.caption(f"{m.source} · 현물 호가 " + ", ".join(f"{c}KRW {v:,.4f}" for c, v in m.spot_quote.items()
-                                                    if c != "KRW")
-               + ("" if m.short_end else " · 1년 미만 상품 없음 (1년물부터 부트스트랩)"))
-    if m.missing:
-        st.warning(f"스냅샷에서 값을 받지 못한 티커 {len(m.missing)}개: {', '.join(m.missing)}")
-    if st.button("블룸버그에서 새로 받기"):
-        with st.spinner("블룸버그 조회 중 (현재값 + 과거 5년)"):
-            try:
-                fetch()
-                get_market.clear()
-                st.success(f"저장: {SNAPSHOT.name}")
-            except Exception as e:  # 블룸버그 미접속 등
-                st.error(f"실패: {e}")
+    if admin:
+        st.selectbox("기준", list(MARKETS), index=list(MARKETS).index(ss["market_src"]), key="adm_market_src",
+                     on_change=on_market_change,
+                     help="바꾸면 선택한 예시 거래를 그 시장 기준(현물환율)으로 다시 불러온다")
+    m = get_market(MARKETS[ss["market_src"]])
+    if admin:
+        st.caption(f"{m.source} · 현물 호가 " + ", ".join(f"{c}KRW {v:,.4f}" for c, v in m.spot_quote.items()
+                                                        if c != "KRW")
+                   + ("" if m.short_end else " · 1년 미만 상품 없음 (1년물부터 부트스트랩)"))
+        if m.missing:
+            st.warning(f"스냅샷에서 값을 받지 못한 티커 {len(m.missing)}개: {', '.join(m.missing)}")
+        if st.button("블룸버그에서 새로 받기", key="adm_fetch"):
+            with st.spinner("블룸버그 조회 중 (현재값 + 과거 5년)"):
+                try:
+                    fetch()
+                    get_market.clear()
+                    st.success(f"저장: {SNAPSHOT.name}")
+                except Exception as e:  # 블룸버그 미접속 등
+                    st.error(f"실패: {e}")
+    else:
+        st.caption(f"시장 기준: {ss['market_src']} · 기준일 {m.as_of}")
 
-    st.header("은행 파라미터")
-    cap_ratio = st.number_input("CET1 목표비율 (%)", value=13.0, min_value=0.0, step=0.5)
-    hurdle = st.number_input("세후 요구수익률 (%)", value=10.0, min_value=0.0, step=0.5)
-    tax = st.number_input("세율 (%)", value=27.5, min_value=0.0, max_value=99.9, step=0.5,
-                          help="0% 이상 100% 미만 (요구수익률을 세전으로 환산할 때 1 - 세율로 나눈다)")
-    ftp = st.number_input("USD 담보 조달 FTP 스프레드 (bp)", value=12.0, step=1.0,
-                          help="FTP - CSA 담보 이자(SOFR). USD 현금 담보 VM의 FVA에 쓴다")
-    ftp_krw = st.number_input("KRW 담보 조달 FTP 스프레드 (bp)", value=12.0, step=1.0,
-                              help="KRW FTP - KRW 현금 담보 이자. CCP 원화 IRS의 VM 조달(FVA)에 쓴다 (확인 필요)")
-    kva_sp = st.number_input("KVA 조달 스프레드 alpha (bp)", value=10.0, step=1.0,
-                             help="KVA 조달금리 r(t) = CD(원화 IRS) 커브 선도 + alpha")
-    kva_curve = st.radio("KVA 조달금리 기준 커브", ["원화 IRS (CD)", "원화 CCS (USD 담보, 비교용)"], horizontal=True,
-                         help="자본이 대체하는 KRW 조달의 기준금리. 원화 IRS(CD)가 확정 방식")
-    fba = st.checkbox("받은 담보 조달이익(FBA) 인정", value=True)
-    marginal = st.number_input("BA-CVA 한계계수", value=0.5, min_value=0.0, step=0.05,
-                               help="은행 CVA 포트폴리오 대비 증분. 완전 분산이면 0.5(rho)")
-    im_spread = st.number_input("낸 IM 조달 스프레드 (bp)", value=0.0, step=1.0)
-    st.header("시뮬레이션")
-    n_paths = st.select_slider("경로 수", [2000, 5000, 10000, 20000], value=5000)
-    vol_scale = st.number_input("금리 변동성 배수", value=1.0, min_value=0.0, step=0.1)
-    kappa = st.number_input("금리 평균회귀 (연)", value=0.0, step=0.01)
-    if kappa < 0:
-        st.warning("음수 평균회귀는 금리 요인이 시간이 갈수록 발산하는 모형입니다. 계산은 그대로 하지만 비현실적인 값일 수 있습니다.")
+    draft_params = None   # 관리자가 고치는 중인 은행 파라미터 (저장하기 전에는 계산에 쓰이지 않는다)
+    if admin:
+        sp = saved_params
+        st.header("은행 파라미터")
+        st.caption("저장해야 모든 사용자의 계산에 쓰입니다 (저장 버튼: 본문의 관리자 영역).")
+        cap_ratio = st.number_input("CET1 목표비율 (%)", value=round(sp.capital_ratio * 100, 6), min_value=0.0,
+                                    step=0.5, key="adm_capital_ratio")
+        hurdle = st.number_input("세후 요구수익률 (%)", value=round(sp.hurdle_after_tax * 100, 6), min_value=0.0,
+                                 step=0.5, key="adm_hurdle")
+        tax = st.number_input("세율 (%)", value=round(sp.tax_rate * 100, 6), min_value=0.0, max_value=99.9, step=0.5,
+                              key="adm_tax",
+                              help="0% 이상 100% 미만 (요구수익률을 세전으로 환산할 때 1 - 세율로 나눈다)")
+        ftp = st.number_input("USD 담보 조달 FTP 스프레드 (bp)", value=round(sp.ftp_spread * 1e4, 6), step=1.0,
+                              key="adm_ftp", help="FTP - CSA 담보 이자(SOFR). USD 현금 담보 VM의 FVA에 쓴다")
+        ftp_krw = st.number_input("KRW 담보 조달 FTP 스프레드 (bp)", value=round(sp.ftp_spread_krw * 1e4, 6),
+                                  step=1.0, key="adm_ftp_krw",
+                                  help="KRW FTP - KRW 현금 담보 이자. CCP 원화 IRS의 VM 조달(FVA)에 쓴다 (확인 필요)")
+        kva_sp = st.number_input("KVA 조달 스프레드 alpha (bp)", value=round(sp.kva_funding_spread * 1e4, 6),
+                                 step=1.0, key="adm_kva_sp",
+                                 help="KVA 조달금리 r(t) = CD(원화 IRS) 커브 선도 + alpha")
+        kva_curve = st.radio("KVA 조달금리 기준 커브", ["원화 IRS (CD)", "원화 CCS (USD 담보, 비교용)"],
+                             index=0 if sp.kva_funding == "krw_irs" else 1, horizontal=True, key="adm_kva_curve",
+                             help="자본이 대체하는 KRW 조달의 기준금리. 원화 IRS(CD)가 확정 방식")
+        fba = st.checkbox("받은 담보 조달이익(FBA) 인정", value=sp.recognise_fba, key="adm_fba")
+        marginal = st.number_input("BA-CVA 한계계수", value=sp.ba_cva_marginal_factor, min_value=0.0, step=0.05,
+                                   key="adm_marginal",
+                                   help="은행 CVA 포트폴리오 대비 증분. 완전 분산이면 0.5(rho)")
+        im_spread = st.number_input("낸 IM 조달 스프레드 (bp)", value=round(sp.im_funding_spread * 1e4, 6), step=1.0,
+                                    key="adm_im_spread")
+        st.header("시뮬레이션")
+        n_opts = [2000, 5000, 10000, 20000]
+        n_paths = st.select_slider("경로 수", n_opts, value=sp.n_paths if sp.n_paths in n_opts else 5000,
+                                   key="adm_n_paths")
+        vol_scale = st.number_input("금리 변동성 배수", value=sp.rate_vol_scale, min_value=0.0, step=0.1,
+                                    key="adm_vol_scale")
+        kappa = st.number_input("금리 평균회귀 (연)", value=sp.rate_mean_reversion, step=0.01, key="adm_kappa")
+        if kappa < 0:
+            st.warning("음수 평균회귀는 금리 요인이 시간이 갈수록 발산하는 모형입니다. 계산은 그대로 하지만 비현실적인 값일 수 있습니다.")
+        draft_params = replace(
+            sp, capital_ratio=cap_ratio / 100, hurdle_after_tax=hurdle / 100, tax_rate=tax / 100,
+            ftp_spread=ftp / 1e4, ftp_spread_krw=ftp_krw / 1e4, kva_funding_spread=kva_sp / 1e4,
+            kva_funding="krw_irs" if kva_curve.startswith("원화 IRS") else "krw_ccs", recognise_fba=fba,
+            ba_cva_marginal_factor=marginal, im_funding_spread=im_spread / 1e4, rate_vol_scale=vol_scale,
+            rate_mean_reversion=kappa, n_paths=n_paths)
 
-params = BankParams(capital_ratio=cap_ratio / 100, hurdle_after_tax=hurdle / 100, tax_rate=tax / 100,
-                    ftp_spread=ftp / 1e4, ftp_spread_krw=ftp_krw / 1e4, kva_funding_spread=kva_sp / 1e4,
-                    kva_funding="krw_irs" if kva_curve.startswith("원화 IRS") else "krw_ccs",
-                    recognise_fba=fba, ba_cva_marginal_factor=marginal,
-                    im_funding_spread=im_spread / 1e4, rate_vol_scale=vol_scale,
-                    rate_mean_reversion=kappa, n_paths=n_paths)
+    st.divider()
+    if admin:
+        st.caption("관리자로 로그인했습니다.")
+        st.button("로그아웃", key="adm_logout", on_click=do_logout)
+    else:
+        with st.expander("관리자 로그인"):
+            st.text_input("관리자 비밀번호", type="password", key="admin_pw")
+            st.button("관리자 로그인", on_click=do_login)
+            if "_login_msg" in ss:
+                kind, text = ss["_login_msg"]
+                (st.error if kind == "error" else st.warning)(text)
+
+
+# ---------------------------------------------------------------------------
+# 관리자: 거래상대방 마스터 편집과 저장
+# ---------------------------------------------------------------------------
+def _blank_row() -> dict:
+    return {"name": "", "grade": store.GRADES[0], "pd_pct": 0.0, "csa": store.CSA_KINDS[0], "dealer_line": "N",
+            "credit_rw_pct": 100.0, "ba_cva_sector": list(BA_CVA_RW)[0]}
+
+
+def on_pick():
+    pick = ss["adm_m_pick"]
+    row = ss["adm_master"].get(pick) if pick != NEW_ROW else None
+    row = row or _blank_row()
+    ss["adm_m_name"], ss["adm_m_grade"], ss["adm_m_csa"] = row["name"], row["grade"], row["csa"]
+    ss["adm_m_pd"], ss["adm_m_rw"] = float(row["pd_pct"]), float(row["credit_rw_pct"])
+    ss["adm_m_sector"], ss["adm_m_dealer"] = row["ba_cva_sector"], store.is_dealer(row)
+
+
+def on_apply():
+    row = {"name": ss["adm_m_name"].strip(), "grade": ss["adm_m_grade"], "pd_pct": ss["adm_m_pd"],
+           "csa": ss["adm_m_csa"], "dealer_line": "Y" if ss["adm_m_dealer"] else "N",
+           "credit_rw_pct": ss["adm_m_rw"], "ba_cva_sector": ss["adm_m_sector"]}
+    why = store.check_row(row)
+    if why:
+        ss["_adm_msg"] = ("error", why)
+        return
+    ss["adm_master"][row["name"]] = row
+    ss["_adm_msg"] = ("success", f"{row['name']}을(를) 마스터 초안에 반영했습니다. 저장해야 계산에 쓰입니다.")
+
+
+def on_delete():
+    pick = ss["adm_m_pick"]
+    if pick != NEW_ROW and pick in ss["adm_master"]:
+        del ss["adm_master"][pick]
+        ss["adm_m_pick"] = NEW_ROW
+        on_pick()
+        ss["_adm_msg"] = ("success", f"{pick}을(를) 마스터 초안에서 지웠습니다. 저장해야 계산에 쓰입니다.")
+
+
+def on_revert():
+    ss["adm_master"] = {k: dict(v) for k, v in store.load_master()[0].items()}
+    ss["adm_m_pick"] = NEW_ROW
+    on_pick()
+    ss["_adm_msg"] = ("success", "저장된 마스터로 되돌렸습니다.")
+
+
+if admin:
+    ss.setdefault("adm_master", {k: dict(v) for k, v in store.load_master()[0].items()})
+    with st.expander("관리자: 거래상대방 마스터와 저장", expanded=True):
+        draft = ss["adm_master"]
+        if "adm_m_name" not in ss:   # 입력 칸의 처음 값 (새 상대방)
+            ss["adm_m_pick"] = NEW_ROW
+            on_pick()
+        st.caption("저장한 마스터가 없으면 가명 샘플 마스터를 씁니다. 여기서 고친 것은 `저장`을 눌러야 계산에 쓰입니다 "
+                   "(사이드바의 은행 파라미터·시뮬레이션도 함께 저장). LGD는 60% 고정.")
+        st.dataframe(pd.DataFrame([{"이름": r["name"], "등급": r["grade"], "연 PD (%)": float(r["pd_pct"]),
+                                    "CSA": r["csa"], "딜러 라인": "예" if store.is_dealer(r) else "아니오",
+                                    "신용 위험가중치 (%)": float(r["credit_rw_pct"]),
+                                    "BA-CVA 업종": r["ba_cva_sector"]} for r in draft.values()]),
+                     hide_index=True, width="stretch")
+        if ss.get("adm_m_pick") not in [NEW_ROW, *draft]:
+            ss["adm_m_pick"] = NEW_ROW
+        st.selectbox("수정·삭제할 상대방", [NEW_ROW, *draft], key="adm_m_pick", on_change=on_pick,
+                     help="기존 상대방을 고르면 아래 칸에 값이 채워집니다. 같은 이름으로 `추가·수정`하면 덮어씁니다")
+        c1, c2, c3 = st.columns(3)
+        c1.text_input("이름", key="adm_m_name")
+        c2.selectbox("등급", store.GRADES, key="adm_m_grade")
+        c3.selectbox("CSA", store.CSA_KINDS, key="adm_m_csa")
+        c1.number_input("연 PD (%)", key="adm_m_pd", min_value=0.0, max_value=100.0, step=0.05, format="%.2f")
+        c2.number_input("신용 위험가중치 (%)", key="adm_m_rw", min_value=0.0, step=10.0,
+                        help="표준방법. 예: 공공기관은 결손보전 기관 0%(별표3 32.가), 그 외 20~50%(32.나·다), "
+                             "은행·동등 증권사 A등급 30%·BBB 50%, 기업 무등급 100%")
+        c3.selectbox("BA-CVA 업종", list(BA_CVA_RW), key="adm_m_sector")
+        st.checkbox("딜러 라인 (헤지 딜러로 쓴다)", key="adm_m_dealer")
+        b1, b2, b3, b4 = st.columns(4)
+        b1.button("추가·수정", key="adm_m_apply", on_click=on_apply)
+        b2.button("삭제", key="adm_m_delete", on_click=on_delete)
+        b3.button("변경 취소", key="adm_m_revert", on_click=on_revert)
+        save_clicked = b4.button("저장", key="adm_save", type="primary")
+        if "_adm_msg" in ss:
+            kind, text = ss.pop("_adm_msg")
+            (st.error if kind == "error" else st.success)(text)
+        if save_clicked:
+            errs = draft_params.problems()
+            if not any(not store.is_dealer(r) for r in draft.values()):
+                errs.append("마스터에 고객(딜러 라인이 아닌 행)이 하나 이상 있어야 함")
+            if errs:
+                st.error("저장하지 않았습니다: " + " / ".join(errs))
+            else:
+                try:
+                    store.save_params(draft_params)
+                    store.save_master(draft)
+                    st.success("저장했습니다. 지금부터 모든 사용자의 계산에 쓰입니다.")
+                except OSError as e:
+                    st.error(f"저장하지 못했습니다: {e}")
+
+# 계산에 쓰는 값은 저장된 것만 (저장하지 않은 관리자 변경은 쓰지 않는다). 저장 직후에도 맞게 여기서 다시 읽는다
+params = store.load_params()
+master, bad_rows, _from_file = store.load_master()
+_sample = None
+for _k in ("cl_name", "dl_name"):   # 로컬 마스터에 예시의 상대방 이름이 없으면 샘플 행을 쓴다
+    _n = ss.get(_k)
+    if _n and _n not in master and ss.get("_preset_" + _k) == _n:
+        _sample = _sample or store.sample_master()
+        if _n in _sample:
+            master[_n] = _sample[_n]
+if bad_rows:
+    st.warning("거래상대방 마스터에서 읽지 못한 행이 있습니다: " + "; ".join(bad_rows))
 
 st.selectbox("예시 불러오기", PRESETS, key="preset", on_change=load_preset)
 
@@ -450,21 +621,30 @@ if product == "CCS" and leg_r.ccy != leg_p.ccy and all(l.ccy in m.spot for l in 
                    "거래일 원금 교환 차액은 현물 결제로 보고 계산에서 제외합니다.")
 
 st.subheader("2. 상대방")
+cl_names = [n for n, r in master.items() if not store.is_dealer(r)]
+if not cl_names:
+    st.error("거래상대방 마스터에 고객이 없습니다. 관리자에게 마스터 등록을 요청하세요.")
+    st.stop()
+if ss.get("cl_name") not in cl_names:
+    ss["cl_name"] = cl_names[0]
 a, b = st.columns(2)
 with a:
-    client = cp_inputs("cl_", "고객")
+    client = cp_pick("cl_name", "고객", cl_names, master)
 with b:
     if is_irs:
         st.markdown("**헤지: CCP**")
-        ccp_name = st.text_input("이름", key="ccp_name")
-        ccp_rw = st.number_input("거래 익스포저 위험가중치 (%)", key="ccp_rw", min_value=0.0, step=0.5,
-                                 help="적격 CCP 2%. CVA 자본 면제. 부도기금 출연 자본은 미반영")
-        st.caption(f"VM {IRS_CONV[product][0]} 현금 일일 정산, IM 은행 일방 납부(5영업일 99% VaR 근사), "
+        st.caption(f"{CCP_NAME}. VM {IRS_CONV[product][0]} 현금 일일 정산, IM 은행 일방 납부(5영업일 99% VaR 근사), "
                    "SA-CCR MPOR 10영업일(별표3 296.사)")
-        dealer = Counterparty(ccp_name, ccp_rw / 100, 0.0, 0.0, 0.6,
+        dealer = Counterparty(CCP_NAME, CCP_RW, 0.0, 0.0, 0.6,
                               CSA(vm=True, im=False, reg_mpor_days=CCP_REG_MPOR_DAYS, ccy=IRS_CONV[product][0], ccp=True))
     else:
-        dealer = cp_inputs("dl_", "헤지 딜러")
+        dl_names = [n for n, r in master.items() if store.is_dealer(r)]
+        if not dl_names:
+            st.error("거래상대방 마스터에 헤지 딜러(딜러 라인)가 없습니다. 관리자에게 마스터 등록을 요청하세요.")
+            st.stop()
+        if ss.get("dl_name") not in dl_names:
+            ss["dl_name"] = dl_names[0]
+        dealer = cp_pick("dl_name", "헤지 딜러", dl_names, master)
 
 st.subheader("3. 헤지와 수수료")
 if is_irs:
