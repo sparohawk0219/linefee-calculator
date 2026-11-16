@@ -268,6 +268,14 @@ for _k, _v in {"ccp_name": "CCP (KRX·LCH)", "ccp_rw": 2.0, "irs_amt": 1000.0, "
                "irs_rate": 0.0, "irs_spread": 0.0, "fee_bp": 10.0, "fee_fx": 1.0}.items():
     st.session_state.setdefault(_k, _v)
 
+# 화면에 그리지 않은 위젯의 session_state는 Streamlit이 지운다 (예: IRS·OIS 화면에서는 두 다리 위젯이 없다).
+# 통화스왑으로 돌아왔을 때 입력이 사라지지 않게 다리 입력은 따로 보관했다가 없어졌으면 되돌려 놓는다 (L-012).
+_KEEP_PREFIXES = ("cr_", "cp_", "hr_", "hp_")
+_keep = st.session_state.setdefault("_leg_keep", {})
+for _k, _v in _keep.items():
+    st.session_state.setdefault(_k, _v)
+_keep.update({_k: _v for _k, _v in st.session_state.items() if _k.startswith(_KEEP_PREFIXES)})
+
 
 # ---------------------------------------------------------------------------
 # 입력 위젯

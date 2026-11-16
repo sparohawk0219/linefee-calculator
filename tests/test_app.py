@@ -39,6 +39,22 @@ def test_param_ranges(at):
            num(at, "BA-CVA 한계계수").value, num(at, "금리 변동성 배수").value) == (27.5, 13.0, 10.0, 0.5, 1.0))
 
 
+def test_product_roundtrip():
+    print("상품 CCS -> IRS -> CCS 두 다리 입력 유지 (L-012)")
+    at = new_app()
+    before = {k: at.session_state[k] for k in ("cr_amt", "cp_amt", "cr_ccy", "cp_ccy", "cr_rate", "cp_rate")}
+    at.radio(key="product").set_value("KRWIRS").run()
+    check("IRS 화면 예외 없음", not at.exception)
+    at.radio(key="product").set_value("USDOIS").run()
+    at.radio(key="product").set_value("CCS").run()
+    check("CCS 복귀 예외 없음", not at.exception)
+    after = {k: at.session_state[k] for k in before}
+    check(f"다리 입력 유지 {before['cr_amt']:.1f} {before['cp_ccy']}", after == before)
+    next(b for b in at.button if b.label == "계산").click().run()
+    check("복귀 후 '계산'이 결과를 만든다", not at.exception and "result" in at.session_state
+          and at.session_state["result"] is not None)
+
+
 def test_validate_params():
     print("BankParams.problems (L-013)")
     check("기본값은 문제 없음", BankParams().problems() == [])
@@ -55,6 +71,7 @@ if __name__ == "__main__":
     except FileNotFoundError as e:   # 스냅샷은 로컬 전용
         sys.exit(str(e))
     test_validate_params()
+    test_product_roundtrip()
     test_param_ranges(app)
     print("실패: " + (", ".join(FAILS) if FAILS else "없음"))
     sys.exit(1 if FAILS else 0)
