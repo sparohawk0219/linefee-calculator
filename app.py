@@ -363,6 +363,8 @@ with st.sidebar:
     st.caption(f"{m.source} · 현물 호가 " + ", ".join(f"{c}KRW {v:,.4f}" for c, v in m.spot_quote.items()
                                                     if c != "KRW")
                + ("" if m.short_end else " · 1년 미만 상품 없음 (1년물부터 부트스트랩)"))
+    if m.missing:
+        st.warning(f"스냅샷에서 값을 받지 못한 티커 {len(m.missing)}개: {', '.join(m.missing)}")
     if st.button("블룸버그에서 새로 받기"):
         with st.spinner("블룸버그 조회 중 (현재값 + 과거 5년)"):
             try:

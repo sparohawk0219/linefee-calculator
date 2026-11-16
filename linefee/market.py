@@ -159,6 +159,7 @@ class MarketData:
     hist: dict = field(default_factory=dict)   # labels, sigma, corr, window
     source: str = ""
     quotes: dict = field(default_factory=dict, repr=False)   # 부트스트랩에 쓴 호가 (검증·표시용)
+    missing: list = field(default_factory=list)   # 스냅샷을 받을 때 값이 없던 티커 (화면 표시용)
     short_end: bool = True     # 1년 미만 상품(스왑포인트, 단기 OIS, CD)이 커브에 들어갔는지
 
     def disc_for(self, leg) -> Curve:
@@ -200,6 +201,18 @@ class MarketData:
         return float(np.clip((s_u**2 + s_j**2 - s_uj**2) / (2 * s_u * s_j), -0.99, 0.99))
 
 
+OPTIONAL_GROUPS = ("fx_pts_USD", "fx_pts_JPY")   # 1년 미만 스왑포인트: 없으면 short_end=False 로 읽는다
+
+
+def check_snapshot(snap: dict) -> None:
+    """필수 키·테너(TICKERS 기준)가 모두 있는지 본다. 빠진 것을 전부 모아 한 번에 알린다."""
+    lost = [f"{key}.{n}" for key, group in TICKERS.items() if key not in OPTIONAL_GROUPS
+            for n in group if str(n) not in snap.get(key, {})]
+    if lost:
+        raise ValueError(f"스냅샷에 필수 호가가 없다 ({len(lost)}개): {', '.join(lost)}"
+                         + (f". 받을 때 못 받은 티커: {', '.join(snap['missing'])}" if snap.get("missing") else ""))
+
+
 def _by_int(d: dict) -> dict:
     return {int(k): v for k, v in d.items()}
 
@@ -223,6 +236,7 @@ def _set_today(as_of: str) -> ql.Date:
 
 def load(path: Path = SNAPSHOT) -> MarketData:
     snap = json.loads(path.read_text(encoding="utf-8"))
+    check_snapshot(snap)
     check_business_day(snap["as_of"])
     today = _set_today(snap["as_of"])
     usd_q = cv.sofr_curve(today, snap["usd_ois"])
@@ -251,6 +265,7 @@ def load(path: Path = SNAPSHOT) -> MarketData:
         source=f"{path.name} ({snap['as_of']})",
         quotes={k: snap[k] for k in ("usd_ois", "jpy_ois", "krw_irs", "krw_ccs", "jpy_basis_bp",
                                      "fx_pts_USD", "fx_pts_JPY", "spot")},
+        missing=list(snap.get("missing", [])),
         short_end=bool(snap.get("fx_pts_USD")),
     )
 
