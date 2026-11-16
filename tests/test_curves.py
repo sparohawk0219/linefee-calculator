@@ -142,6 +142,7 @@ def test_reprice_inputs():
 
 if __name__ == "__main__":
     try:
-        check()
+        fails = check()
     except FileNotFoundError as e:   # 스냅샷은 로컬 전용 (L-018)
         sys.exit(str(e))
+    sys.exit(1 if fails else 0)      # 실패가 있으면 종료 코드 1 (L-017)
