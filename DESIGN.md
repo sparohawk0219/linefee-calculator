@@ -165,7 +165,7 @@ MVA = ∫ [ f_IM(t) − c_IM(t) ] × E[ IM_냄(t) ] × D(t) dt
 KVA = ∫ ( h − r(t) ) × E[ K(t) ] × e^{−h t} dt
 K(t)  = CET1 목표비율 × RWA(t)            (레버리지 제약이 걸리면 3.5)
 RWA(t) = RWA_CCR(t) + RWA_CVA(t) + RWA_시장(t)
-r(t)  = 자본이 대체하는 조달금리 = KRW 선도금리 + FTP 스프레드
+r(t)  = 자본이 대체하는 조달금리 = CD(원화 IRS) 커브 선도금리 + alpha (alpha는 파라미터, 기본 10bp. DECISIONS M5)
 h     = 세후 허들 / (1 − 세율)
 ```
 - 수수료의 현재가치는 첫날 이익으로 CET1에 적립된다. 적립된 자본이 조달을 대체한다.
