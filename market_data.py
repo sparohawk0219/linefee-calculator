@@ -17,7 +17,7 @@ KVA 조달금리 등이 확정 결정(DECISIONS M5)과 다르다. `linefee.marke
 """
 import json
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -46,6 +46,11 @@ def years_ago(end: date, years: int) -> date:
         return end.replace(year=end.year - years, day=28)
 
 
+def prev_weekday(d: date) -> date:
+    """d가 토·일이면 직전 금요일, 아니면 d. 호가 기준일(as_of)이 주말이 되지 않게 한다."""
+    return d - timedelta(days=max(d.weekday() - 4, 0))
+
+
 def fetch(path: Path | None = None) -> dict:
     """블룸버그 PX_LAST를 받아 path에 저장한다 (path가 None이면 저장하지 않는다).
     회귀 기준 스냅샷(SNAPSHOT)은 기본으로 덮어쓰지 않는다. 값이 없는 테너는 빠진다."""
@@ -57,7 +62,7 @@ def fetch(path: Path | None = None) -> dict:
             tickers += list(by_tenor.values())
     raw = bdp(tickers, ["PX_LAST"])
 
-    snap = {"as_of": date.today().isoformat(), "source": "Bloomberg PX_LAST", "tickers": TICKERS}
+    snap = {"as_of": prev_weekday(date.today()).isoformat(), "source": "Bloomberg PX_LAST", "tickers": TICKERS}
     snap["jpykrw_spot"] = raw[TICKERS["jpykrw_spot"]]["PX_LAST"]
     missing = []
     for key, by_tenor in TICKERS.items():

@@ -15,7 +15,7 @@
 """
 import json
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -71,6 +71,26 @@ FACTORS = ["r_USD", "r_KRW", "r_JPY", "fx_USD", "fx_JPY"]
 
 
 # ---------------------------------------------------------------------------
+# 날짜 (블룸버그와 무관)
+# ---------------------------------------------------------------------------
+def prev_business_day(d: date, ccys=CURRENCIES) -> date:
+    """d 이전(d 포함) 가장 가까운, 통화들의 공통 영업일 (curves.calendar 기준)."""
+    cal = cv.calendar(ccys)
+    while not cal.isBusinessDay(ql.Date(d.day, d.month, d.year)):
+        d -= timedelta(days=1)
+    return d
+
+
+def check_business_day(as_of: str, ccys=CURRENCIES) -> None:
+    """as_of가 공통 영업일이 아니면 원인을 알 수 있는 오류를 낸다 (그대로 두면 부트스트랩이 지표 고정값 오류로 실패)."""
+    d = date.fromisoformat(as_of)
+    if prev_business_day(d, ccys) != d:
+        raise ValueError(f"스냅샷 as_of={as_of}({'월화수목금토일'[d.weekday()]})는 {'·'.join(ccys)} 공통 영업일이 아니다. "
+                         f"호가 기준일은 영업일이어야 한다 (직전 영업일 {prev_business_day(d, ccys)}). "
+                         "스냅샷의 as_of를 호가 기준일로 고치거나 다시 받는다.")
+
+
+# ---------------------------------------------------------------------------
 # 블룸버그
 # ---------------------------------------------------------------------------
 def fetch(years: int = 5, path: Path = SNAPSHOT) -> dict:
@@ -79,7 +99,7 @@ def fetch(years: int = 5, path: Path = SNAPSHOT) -> dict:
 
     tickers = [t for group in TICKERS.values() for t in group.values()]
     raw = bdp(tickers, ["PX_LAST"])
-    snap = {"as_of": date.today().isoformat(), "source": "Bloomberg PX_LAST", "missing": [],
+    snap = {"as_of": prev_business_day(date.today()).isoformat(), "source": "Bloomberg PX_LAST", "missing": [],
             "note": "fx_pts_*: 스왑포인트를 통화 단위로 환산한 값 (KRW 그대로, JPY / 100)"}
     for key, group in TICKERS.items():
         snap[key] = {}
@@ -203,6 +223,7 @@ def _set_today(as_of: str) -> ql.Date:
 
 def load(path: Path = SNAPSHOT) -> MarketData:
     snap = json.loads(path.read_text(encoding="utf-8"))
+    check_business_day(snap["as_of"])
     today = _set_today(snap["as_of"])
     usd_q = cv.sofr_curve(today, snap["usd_ois"])
     usd_h = ql.YieldTermStructureHandle(usd_q)
@@ -243,6 +264,7 @@ def load_legacy(path: Path = LEGACY_SNAPSHOT) -> MarketData:
       - 베이시스 헬퍼의 USD 다리(SOFR 플랫, 담보 통화)는 어떤 USD 커브에서도 Par이므로 4% 평탄 커브를 쓴다
     """
     snap = json.loads(path.read_text(encoding="utf-8"))
+    check_business_day(snap["as_of"], ("KRW", "JPY"))
     today = _set_today(snap["as_of"])
     usd_h = ql.YieldTermStructureHandle(cv.flat_curve(today, 0.04))
     tona_q = cv.tona_curve(today, _years(snap["jpy_ois"]))
