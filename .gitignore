@@ -12,6 +12,8 @@ market_snapshot.json
 linefee/market_snapshot.json
 # 개별 거래 검토 보고서 (로컬 전용)
 report/
+# 리뷰 노트 (로컬 전용, DECISIONS O9)
+reviews/
 # 로컬 전용: golden 기준값, 임시 재현 스크립트 (docs/DECISIONS.md O2)
 local/
 # UI 평가 실행 기록 (행동 로그, 점수)
