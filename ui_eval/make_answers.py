@@ -59,7 +59,8 @@ def main():
     ap.add_argument("--quiet-values", action="store_true", help="값을 화면에 찍지 않는다 (숨긴 과제용)")
     a = ap.parse_args()
     meta = {"snapshot": hashlib.sha256(SNAPSHOT.read_bytes()).hexdigest()[:16],
-            "master": hashlib.sha256(c.MASTER_SAMPLE.read_bytes()).hexdigest()[:16]}
+            # 마스터 해시는 줄바꿈 변환(CRLF)에 흔들리지 않게 LF로 맞춘 뒤 계산한다
+            "master": hashlib.sha256(b"".join(c.MASTER_SAMPLE.read_bytes().splitlines())).hexdigest()[:16]}
     bad = 0
     for which in ([a.set] if a.set else ["public", "hidden"]):
         print(f"{which}:")
