@@ -1,0 +1,7 @@
+numpy>=1.26
+# 커브 부트스트랩·영업일 (linefee/curves.py)
+QuantLib>=1.44
+# 라인피 대시보드 (streamlit run app.py). pandas·altair는 streamlit과 함께 설치된다
+streamlit>=1.40
+# 블룸버그에서 시장 데이터를 새로 받을 때만 필요 (python market_data.py, python -m linefee.market):
+#   pip install --index-url=https://blpapi.bloomberg.com/repository/releases/python/simple/ blpapi

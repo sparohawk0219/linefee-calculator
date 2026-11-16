@@ -1,0 +1,14 @@
+# 비밀값
+.env
+.streamlit/secrets.toml
+# 파이썬
+__pycache__/
+*.pyc
+.pytest_cache/
+# 워크플로·에이전트 작업물
+.worktrees/
+# 블룸버그 시장 데이터 (라이선스 데이터, 로컬 전용. python -m linefee.market 으로 받는다)
+market_snapshot.json
+linefee/market_snapshot.json
+# 개별 거래 검토 보고서 (로컬 전용)
+report/
