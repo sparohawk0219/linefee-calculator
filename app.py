@@ -78,6 +78,30 @@ def fee_loc_label(loc: str, fx: bool) -> str:
     return "고객 선도환율 마진" if fx else "고객이 내는 다리에 가산"
 
 
+def money_ko(amount: float, ccy: str) -> str:
+    """금액을 사람이 읽는 말로 (예: 2억 달러, 3,000만 달러, 1조 2,000억원). 입력 칸 옆 확인용."""
+    name = {"KRW": "원", "USD": "달러", "JPY": "엔"}[ccy]
+    v = round(abs(amount))
+    if v < 10_000:
+        return f"{v:,}{name}"
+    parts = []
+    for size, unit in ((10**12, "조"), (10**8, "억"), (10**4, "만")):
+        n, v = divmod(v, size)
+        if n:
+            parts.append(f"{n:,}{unit}")
+    return " ".join(parts[:2]) + (name if ccy == "KRW" else f" {name}" if ccy == "USD" else name)
+
+
+def leg_words(leg: Leg) -> str:
+    """다리 하나를 한 문장 조각으로: '엔 100억엔 고정 4.0700%' 처럼."""
+    amt = f"{leg.ccy} {money_ko(leg.notional, leg.ccy)}"
+    if leg.kind == "fixed" and leg.rate != 0:
+        return f"{amt} 고정 {leg.rate * 100:.4f}%"
+    if leg.kind == "float":
+        return f"{amt} {FLOAT_INDEX[leg.ccy]} + {leg.rate * 1e4:.2f}bp"
+    return amt
+
+
 MARKETS = {"최신 (블룸버그 스냅샷)": "latest", "엔/원 검토 기준 (2026-11-11, KRW·JPY만)": "legacy"}
 
 st.set_page_config(page_title="라인피 계산기", layout="wide")
@@ -287,6 +311,8 @@ def leg_inputs(prefix: str, title: str, direction: str, product: str) -> Leg:
     ccy = st.selectbox("통화", CCYS, key=prefix + "ccy")
     unit, label = UNIT[ccy]
     amt = st.number_input(f"명목 ({label})", key=prefix + "amt", min_value=0.0, step=10.0, format="%.2f")
+    who = "고객" if prefix in ("cr_", "cp_") else "헤지 딜러"
+    st.caption(f"= {money_ko(amt * unit, ccy)} ({who + '이 은행에 지급' if direction == 'receive' else '은행이 ' + who + '에게 지급'})")
     if product == "FXFWD":
         return Leg(ccy, amt * unit, direction, rate=0.0, final_exchange=True)
     kinds = ["fixed"] if ccy == "KRW" else ["fixed", "float"]
@@ -308,10 +334,13 @@ def leg_inputs(prefix: str, title: str, direction: str, product: str) -> Leg:
 def irs_inputs(product: str) -> Trade:
     ccy, freq, dc, index = IRS_CONV[product]
     st.caption(f"{PRODUCTS[product]}: 고정 vs {index}, 연 {freq}회 지급, {dc}, 원금 교환 없음, "
-               f"{ccy} 담보 커브로 평가 (CCP 청산 기준)")
+               f"{ccy} 담보 커브로 평가 (CCP 청산 기준). 만기를 바꾸면 고정금리가 그 만기의 시장 파 금리로 다시 채워진다")
     a, b = st.columns(2)
-    a.number_input(f"명목 ({UNIT[ccy][1]})", key="irs_amt", min_value=0.0, step=100.0, format="%.2f")
-    b.radio("방향", IRS_DIRS, key="irs_dir")
+    irs_amt = a.number_input(f"명목 ({UNIT[ccy][1]})", key="irs_amt", min_value=0.0, step=100.0, format="%.2f")
+    a.caption(f"= {money_ko(irs_amt * UNIT[ccy][0], ccy)}")
+    irs_dir = b.radio("방향", IRS_DIRS, key="irs_dir")
+    b.caption("고객이 고정금리를 " + ("지급한다 (은행이 고정을 받는다)" if irs_dir == IRS_DIRS[0]
+                                   else "받는다 (은행이 고정을 낸다)"))
     a.number_input("고정금리 (%)", key="irs_rate", step=0.0001, format="%.4f",
                    help="만기·스프레드를 바꾸면 시장 파 금리로 다시 채운다. 라인피는 아래에서 따로 넣는다")
     b.number_input(f"{index} 가산 스프레드 (bp)", key="irs_spread", step=1.0, format="%.2f", on_change=set_irs_par)
