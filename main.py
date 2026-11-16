@@ -1,4 +1,6 @@
-"""라인 피 계산 실행.
+"""구버전(엔/원 검토 당시), 회귀 비교 전용. 현재 방법은 `linefee/`, `docs/METHODOLOGY_v1.md`. KVA 조달금리 등이 확정 결정(DECISIONS M5)과 다르다.
+
+라인 피 계산 실행.
 
     python main.py
 

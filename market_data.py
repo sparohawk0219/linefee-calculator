@@ -1,7 +1,12 @@
-"""시장 데이터: 블룸버그에서 받아 market_snapshot.json에 저장하고, 모델은 스냅샷만 읽는다.
+"""구버전(엔/원 검토 당시) 시장 데이터 모듈, 회귀 비교 전용. 현재 방법은 `linefee/`, `docs/METHODOLOGY_v1.md`.
+KVA 조달금리 등이 확정 결정(DECISIONS M5)과 다르다. `linefee.market.load_legacy`와 회귀 테스트가 이 모듈의
+`SNAPSHOT`(루트 market_snapshot.json, 엔/원 검토 기준 회귀 스냅샷)을 읽는다.
 
-    python market_data.py      # 블룸버그에서 새로 받기
-    python market_data.py hist # 금리 변동성·상관 추정치 추가 (과거 5년 주간)
+시장 데이터: 블룸버그에서 받아 저장하고, 모델은 스냅샷만 읽는다.
+회귀 기준 스냅샷(`SNAPSHOT`)은 덮어쓰지 않는다. 새로 받을 때는 저장 경로를 명시해야 저장한다.
+
+    python market_data.py --out 새파일.json            # 블룸버그에서 새로 받아 새파일.json에 저장
+    python market_data.py hist --out 새파일.json       # 그 파일에 금리 변동성·상관 추정치 추가 (과거 5년 주간)
 
 커브 구성 (딜러 B CSA가 USD 현금이므로 USD SOFR 담보 기준)
     KRW 할인커브: KRW/USD 온쇼어 CCS (KRW 고정 vs SOFR) 파 금리       KRWNSQ{n} Curncy
@@ -33,8 +38,9 @@ TICKERS = {
 }
 
 
-def fetch() -> dict:
-    """블룸버그 PX_LAST를 받아 스냅샷으로 저장한다. 값이 없는 테너는 빠진다."""
+def fetch(path: Path | None = None) -> dict:
+    """블룸버그 PX_LAST를 받아 path에 저장한다 (path가 None이면 저장하지 않는다).
+    회귀 기준 스냅샷(SNAPSHOT)은 기본으로 덮어쓰지 않는다. 값이 없는 테너는 빠진다."""
     from bbg import bdp
 
     tickers = [TICKERS["jpykrw_spot"]]
@@ -56,7 +62,8 @@ def fetch() -> dict:
             else:
                 missing.append(t)
     snap["missing"] = missing
-    SNAPSHOT.write_text(json.dumps(snap, indent=2, ensure_ascii=False), encoding="utf-8")
+    if path is not None:
+        path.write_text(json.dumps(snap, indent=2, ensure_ascii=False), encoding="utf-8")
     return snap
 
 
@@ -69,8 +76,9 @@ HIST_TICKERS = {
 }
 
 
-def fetch_hist(years: int = 5) -> dict:
-    """과거 주간 변화로 금리 평행이동 변동성과 세 요인 간 상관을 추정해 스냅샷에 추가한다.
+def fetch_hist(years: int = 5, path: Path | None = None) -> dict:
+    """과거 주간 변화로 금리 평행이동 변동성과 세 요인 간 상관을 추정해 path의 스냅샷에 추가한다.
+    path가 None이면 추정치만 돌려주고 저장하지 않는다 (회귀 기준 SNAPSHOT은 기본으로 덮어쓰지 않는다).
 
     KRW 금리: KRW CCS 10년, JPY 금리: JPY OIS 10년 + TONA/SOFR 베이시스 10년, FX: log JPYKRW.
     주간(금요일) 변화를 쓴다. 일간은 서울과 도쿄 마감 시각이 달라 상관이 낮게 나온다.
@@ -100,9 +108,10 @@ def fetch_hist(years: int = 5) -> dict:
         "corr_fx_krw": float(corr[2, 0]),  # FX = JPYKRW (엔 강세가 +)
         "corr_fx_jpy": float(corr[2, 1]),
     }
-    snap = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
-    snap["hist"] = hist
-    SNAPSHOT.write_text(json.dumps(snap, indent=2, ensure_ascii=False), encoding="utf-8")
+    if path is not None:
+        snap = json.loads(path.read_text(encoding="utf-8"))
+        snap["hist"] = hist
+        path.write_text(json.dumps(snap, indent=2, ensure_ascii=False), encoding="utf-8")
     return hist
 
 
@@ -180,13 +189,23 @@ def load(path: Path = SNAPSHOT) -> Market:
 
 if __name__ == "__main__":
     import sys
-    if sys.argv[1:] == ["hist"]:     # python market_data.py hist
-        for k, v in fetch_hist().items():
+    args = sys.argv[1:]
+    out = None
+    if "--out" in args:       # 저장 경로를 명시할 때만 저장한다
+        k = args.index("--out")
+        out = Path(args[k + 1])
+        args = args[:k] + args[k + 2:]
+        if out.resolve() == SNAPSHOT.resolve():
+            raise SystemExit("회귀 기준 스냅샷(SNAPSHOT)은 덮어쓸 수 없습니다. 다른 경로를 쓰세요.")
+    if args == ["hist"]:     # python market_data.py hist --out 새파일.json
+        for k, v in fetch_hist(path=out).items():
             print(f"{k:>14}: {v}")
         raise SystemExit
-    s = fetch()
-    print(f"{s['as_of']} 저장: {SNAPSHOT.name}, 누락 {s['missing'] or '없음'}")
-    m = load()
+    if out is None:
+        raise SystemExit("저장 경로가 없어 실행하지 않습니다: python market_data.py --out 새파일.json")
+    s = fetch(out)
+    print(f"{s['as_of']} 저장: {out.name}, 누락 {s['missing'] or '없음'}")
+    m = load(out)
     print(f"JPYKRW {m.jpykrw_spot:.4f}")
     print(f"{'년':>4}{'KRW CCS':>9}{'JPY OIS':>9}{'JPY 베이시스':>12}{'KRW IRS':>9}")
     for n in TENORS:

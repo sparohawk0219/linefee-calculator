@@ -1,4 +1,6 @@
-"""30년 JPY/KRW 고정-고정 CCS 백투백 중개의 라인 피(XVA) 계산.
+"""구버전(엔/원 검토 당시), 회귀 비교 전용. 현재 방법은 `linefee/`, `docs/METHODOLOGY_v1.md`. KVA 조달금리 등이 확정 결정(DECISIONS M5)과 다르다.
+
+30년 JPY/KRW 고정-고정 CCS 백투백 중개의 라인 피(XVA) 계산.
 
 구조
     HF  <-- (귀사: KRW 수취, JPY 지급) -->  귀사  <-- (반대) -->  딜러 B

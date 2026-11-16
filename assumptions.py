@@ -1,8 +1,11 @@
-"""거래 조건과 시장·신용·규제 가정.
+"""구버전(엔/원 검토 당시), 회귀 비교 전용. 현재 방법은 `linefee/`, `docs/METHODOLOGY_v1.md`. KVA 조달금리 등이 확정 결정(DECISIONS M5)과 다르다.
+아래 주석의 "확정"은 엔/원 검토 당시의 선택이며, 현재 확정 방법(docs/DECISIONS.md)을 뜻하지 않는다.
+
+거래 조건과 시장·신용·규제 가정.
 
 숫자를 바꾼 뒤 `python main.py`를 다시 돌리면 된다.
 시장 데이터(커브, 환율, 변동성, CDS)는 market_snapshot.json에서 읽는다.
-새로 받으려면 `python market_data.py` (블룸버그 필요).
+새로 받으려면 `python market_data.py --out 새파일.json` (블룸버그 필요, 회귀 기준 스냅샷은 덮어쓰지 않는다).
 
 거래: Party A 딜러 B, Party B 당행. 딜러 B가 최초에 원화 지급·엔화 수취, 만기에 반대,
 중간에 엔/원 고정금리 교환. 반대편 HF와는 같은 조건의 반대 거래 (무담보).
@@ -20,7 +23,7 @@ class Assumptions:
     coupon_jpy: float | None = 0.0407  # 엔화 고정금리 (None이면 커브 파 금리), 연 지급액 = 금리
     coupon_krw: float | None = 0.0403  # 원화 고정금리 (None이면 커브 파 금리)
     krw_day_count: str = "ACT/360"     # 원화 쿠폰 일수계산. ACT/360이면 연 지급액 = 금리 x 365.25/360
-    # 귀사 수수료 수취 방식 (확정: running)
+    # 귀사 수수료 수취 방식 (엔/원 검토 당시 선택: running)
     #   "running": 공공기관 A가 내는 원화 쿠폰 = 딜러 B에 주는 원화 쿠폰 + hf_krw_spread_bp (같은 ACT/360)
     #              공공기관 A 4.13%, 딜러 B 4.03%. 딜러 B는 upfront를 내지 않는다
     #   "running_dealer_b": 공공기관 A 쿠폰 = coupon_krw, 딜러 B 쿠폰 = coupon_krw - hf_krw_spread_bp
@@ -81,7 +84,7 @@ class Assumptions:
     # SA-CCR에서 통화스왑을 어느 자산군으로 분류할지 (시행세칙 별표3 267.나)
     #   "fx_only": 주된 위험요인(환율) 하나로 분류 → FX add-on 4%만
     #   "fx_and_ir": FX + 통화별 금리 두 다리까지 함께 분류 (267.나.(2) 복잡한 거래)
-    sa_ccr_ccs_treatment: str = "fx_only"   # 확정: 금리 다리 미포함
+    sa_ccr_ccs_treatment: str = "fx_only"   # 엔/원 검토 당시 선택: 금리 다리 미포함
     # 공공기관 A에 CVA 자본 부과. 신용 RW 0%와 별개로 별표3 306.에 따라 모든 파생상품이 대상
     # (면제는 적격 중앙청산소 거래, 298.가·나 거래뿐)
     hf_cva_capital: bool = True
@@ -93,7 +96,7 @@ class Assumptions:
     #   시행세칙 별표3 308: 파생상품 명목원금 합계 140조원 이하 은행만 "ccr_proxy" 선택 가능
     # "ccr_ratio": 참고용. 은행 전체의 CVA RWA / CCR RWA 실적 비율을 이 거래에 그대로 적용.
     #   거래별 비율은 만기와 상대방 유형에 따라 수십 배 차이 나므로 가격 산정에는 쓰지 않는다
-    cva_capital_method: str = "ba_cva"      # 확정: 308. 특례 대상 아님
+    cva_capital_method: str = "ba_cva"      # 엔/원 검토 당시 선택: 308. 특례 대상 아님
     cva_to_ccr_rwa_ratio: float = 0.33   # 은행 전체 실적치 (배분 기준이 아니라 결과로 나온 비율)
 
     # ---- CVA 자본: BA-CVA (reduced, 헤지 없음) ----
@@ -110,12 +113,12 @@ class Assumptions:
     # 거래상대방이 많은 포트폴리오에서는 dK/dSCVA = (rho^2 x 합계 SCVA + (1-rho^2) x SCVA_dealer_b) / K
     # 이고, 딜러 B 비중이 작으면 rho(= 0.5)에 가까워진다.
     # 기본값 0.5: 이 거래로 은행 전체 BA-CVA 자본이 실제로 늘어나는 양 (근사치)
-    # 확정: 귀사 CVA 포트폴리오는 거의 완전 분산 → rho(0.5)에 수렴
+    # 엔/원 검토 당시 선택: 귀사 CVA 포트폴리오는 거의 완전 분산 → rho(0.5)에 수렴
     ba_cva_marginal_factor: float = 0.5
 
     # ---- 딜러 B upfront (딜러 B가 귀사에 지급, HF에서는 받는 것 없음) ----
     dealer_b_structure: str = "bullet"          # "bullet": 30년 break 없음, "break": 10년 mutual break
-    # 30년 bullet upfront 확정 금액 (원화 명목 대비 bp). None이면 아래 연 bp x 원화 연금계수
+    # 30년 bullet upfront 금액 (엔/원 검토 당시 합의) (원화 명목 대비 bp). None이면 아래 연 bp x 원화 연금계수
     dealer_b_upfront_bullet_bp: float | None = 220.0
     # 딜러 B 제시: 연 bp를 30년 원화 연금계수로 upfront 환산해 지급 (연 10bp x 30이 아님)
     dealer_b_fee_bullet_bp_pa: float = 10.0     # 30년 bullet
@@ -129,7 +132,7 @@ class Assumptions:
     break_exercise_prob: float = 1.0           # 10년 시점에 break가 실행될 확률
 
     # ---- 금리 요인 (공사 익스포저 시뮬레이션) ----
-    # 통화별 평행이동 요인. 변동성·상관은 market_snapshot.json의 hist (python market_data.py hist)
+    # 통화별 평행이동 요인. 변동성·상관은 market_snapshot.json의 hist (python market_data.py hist --out 새파일.json)
     rate_factors: bool = True
     rate_vol_scale: float = 1.0               # 과거 추정 변동성에 곱하는 배수
     rate_mean_reversion: float = 0.0          # 0이면 평행이동이 그대로 누적 (Ho-Lee)

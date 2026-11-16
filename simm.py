@@ -3,6 +3,8 @@
 고정-고정 CCS라서 vega와 curvature는 없다. 금리 delta, 통화간 베이시스, FX delta만 있다.
 이 거래 하나만 넣은 단독 계산이고, 딜러 B와의 기존 거래와의 상계는 반영하지 않는다.
 
+현재도 쓰는 모듈이다: `linefee/regcap.py`가 PARAMS, VERTICES, vertex_pv01을 가져다 쓴다 (구버전 표시 대상 아님).
+
 파라미터 출처: ISDA SIMM Methodology
     v2.8+2512 (2026-07-11 시행, 현재 적용)
     v2.9+2606 (2026-12-05 시행 예정)
