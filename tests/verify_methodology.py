@@ -18,7 +18,7 @@ from linefee.engine import simulate, trade_forward_value, trade_value_paths
 from linefee.market import load, load_legacy
 from linefee.pricing import breakeven, market_hedge, par_client, run
 from linefee.regcap import ccp_im_profile
-from linefee.trade import CSA, BankParams, Counterparty, Leg, Trade, build_deal
+from linefee.trade import CCP_REG_MPOR_DAYS, CSA, BankParams, Counterparty, Leg, Trade, build_deal
 from tests._check import Checker
 from tests.regression_jpykrw import hurdle_txt, jpykrw_deal
 
@@ -175,7 +175,7 @@ def irs_trade(m, ccy, years, recv_fixed=True):
 def irs():
     m = load()
     p = BankParams(n_paths=5000)
-    ccp = Counterparty("CCP", 0.02, 0.0, csa=CSA(vm=True, reg_mpor_days=5, ccp=True))
+    ccp = Counterparty("CCP", 0.02, 0.0, csa=CSA(vm=True, reg_mpor_days=CCP_REG_MPOR_DAYS, ccp=True))
     print(f"== 13.5 [최신 시장 {m.as_of}] 원화 IRS·달러 OIS (5,000경로, 라인피 5bp, 은행 고정 수취)")
     for ccy, years in (("KRW", 5.0), ("USD", 3.0)):
         c = irs_trade(m, ccy, years)

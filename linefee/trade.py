@@ -82,6 +82,11 @@ class Trade:
         return {l.ccy for l in self.legs}
 
 
+# 적격 CCP에 대한 청산회원 거래익스포져의 SA-CCR 최소 리스크 담보기간 (영업일). 별표3 296.사: 장외파생상품은 10영업일
+# (267.카.(2)의 중앙청산거래 5영업일에 대한 특칙). CCP IM 보유기간(BankParams.ccp_im_mpor_days)과는 다른 값이다.
+CCP_REG_MPOR_DAYS = 10
+
+
 @dataclass
 class CSA:
     vm: bool = False             # VM 일일 교환 (임계치 0, 최소이전금액 0, 정산 지연 0 가정)

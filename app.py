@@ -48,7 +48,7 @@ from linefee.market import (LEGACY_SNAPSHOT, SNAPSHOT, fetch, load, load_legacy,
 from linefee.engine import trade_value_today  # noqa: E402
 from linefee.pricing import (Run, annual_pnl, breakeven, fee_unit_pv, market_gap,  # noqa: E402
                              market_hedge, par_client, run)
-from linefee.trade import (BA_CVA_RW, CSA, BankParams, Counterparty, Leg, Trade,  # noqa: E402
+from linefee.trade import (BA_CVA_RW, CCP_REG_MPOR_DAYS, CSA, BankParams, Counterparty, Leg, Trade,  # noqa: E402
                            build_deal, fee_delta)
 
 OKU = 1e8
@@ -460,9 +460,9 @@ with b:
         ccp_rw = st.number_input("거래 익스포저 위험가중치 (%)", key="ccp_rw", min_value=0.0, step=0.5,
                                  help="적격 CCP 2%. CVA 자본 면제. 부도기금 출연 자본은 미반영")
         st.caption(f"VM {IRS_CONV[product][0]} 현금 일일 정산, IM 은행 일방 납부(5영업일 99% VaR 근사), "
-                   "SA-CCR MPOR 5영업일")
+                   "SA-CCR MPOR 10영업일(별표3 296.사)")
         dealer = Counterparty(ccp_name, ccp_rw / 100, 0.0, 0.0, 0.6,
-                              CSA(vm=True, im=False, reg_mpor_days=5, ccy=IRS_CONV[product][0], ccp=True))
+                              CSA(vm=True, im=False, reg_mpor_days=CCP_REG_MPOR_DAYS, ccy=IRS_CONV[product][0], ccp=True))
     else:
         dealer = cp_inputs("dl_", "헤지 딜러")
 
