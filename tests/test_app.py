@@ -82,6 +82,12 @@ def test_product_roundtrip():
     check("CCS 복귀 예외 없음", not at.exception)
     after = {k: at.session_state[k] for k in before}
     check(f"다리 입력 유지 {before['cr_amt']:.1f} {before['cp_ccy']}", after == before)
+    check("상품을 바꾸면 상대방이 비워진다", at.session_state["cl_name"] is None and at.session_state["dl_name"] is None)
+    next(b for b in at.button if b.label == "계산").click().run()
+    check("상대방을 고르지 않으면 계산하지 않고 안내한다",
+          "result" not in at.session_state and any("고객을 고르지" in e.value for e in at.error))
+    at.selectbox(key="cl_name").set_value("기업 C").run()
+    at.selectbox(key="dl_name").set_value("딜러 B").run()
     next(b for b in at.button if b.label == "계산").click().run()
     check("복귀 후 '계산'이 결과를 만든다", not at.exception and "result" in at.session_state
           and at.session_state["result"] is not None)

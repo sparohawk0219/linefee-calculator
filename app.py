@@ -261,9 +261,16 @@ def fx_quote_unit(trade: Trade) -> int:
     return 100 if fx is not None and fx.ccy == "JPY" else 1
 
 
+def clear_counterparties():
+    """상품·통화를 예시에서 바꾸면 예시의 상대방은 더 이상 맞지 않을 수 있다. 비워 두고 거래에 맞게 직접 고르게 한다."""
+    for k in ("cl_name", "dl_name", "_preset_cl_name", "_preset_dl_name"):
+        st.session_state[k] = None
+
+
 def on_product_change():
     """상품을 바꾸면 기본값을 맞춘다. FX 선도는 딜러 라인 헤지, IRS·OIS는 CCP 헤지와 파 금리."""
     ss = st.session_state
+    clear_counterparties()
     prod = ss["product"]
     if prod == "FXFWD":
         ss["h_mode"] = LINE
@@ -308,7 +315,8 @@ _keep.update({_k: _v for _k, _v in st.session_state.items() if _k.startswith(_KE
 def leg_inputs(prefix: str, title: str, direction: str, product: str) -> Leg:
     ss = st.session_state
     st.markdown(f"**{title}**")
-    ccy = st.selectbox("통화", CCYS, key=prefix + "ccy")
+    ccy = st.selectbox("통화", CCYS, key=prefix + "ccy",
+                       on_change=clear_counterparties if prefix in ("cr_", "cp_") else None)
     unit, label = UNIT[ccy]
     amt = st.number_input(f"명목 ({label})", key=prefix + "amt", min_value=0.0, step=10.0, format="%.2f")
     who = "고객" if prefix in ("cr_", "cp_") else "헤지 딜러"
@@ -350,8 +358,11 @@ def irs_inputs(product: str) -> Trade:
 
 def cp_pick(key: str, title: str, names: list, master: dict) -> Counterparty:
     """마스터에서 이름으로 상대방을 고른다. 등급·PD·위험가중치는 보여 주지 않는다 (관리자가 마스터에서 관리)."""
-    name = st.selectbox(title, names, key=key)
-    st.caption(f"CSA: {master[name]['csa']}")
+    name = st.selectbox(title, names, key=key, index=None, placeholder=f"{title} 선택 (필수)")
+    if name is None:
+        st.warning(f"{title}: 아직 고르지 않았습니다. 이 거래에 맞게 직접 고른 뒤 계산하세요.")
+        return None
+    st.caption(f"{title} = {name}. CSA: {master[name]['csa']}. 이 거래의 {title}이(가) 맞는지 확인하세요.")
     return store.counterparty(master[name])
 
 
@@ -655,7 +666,7 @@ if not cl_names:
     st.error("거래상대방 마스터에 고객이 없습니다. 관리자에게 마스터 등록을 요청하세요.")
     st.stop()
 if ss.get("cl_name") not in cl_names:
-    ss["cl_name"] = cl_names[0]
+    ss["cl_name"] = None
 a, b = st.columns(2)
 with a:
     client = cp_pick("cl_name", "고객", cl_names, master)
@@ -672,7 +683,7 @@ with b:
             st.error("거래상대방 마스터에 헤지 딜러(딜러 라인)가 없습니다. 관리자에게 마스터 등록을 요청하세요.")
             st.stop()
         if ss.get("dl_name") not in dl_names:
-            ss["dl_name"] = dl_names[0]
+            ss["dl_name"] = None
         dealer = cp_pick("dl_name", "헤지 딜러", dl_names, master)
 
 st.subheader("3. 헤지와 수수료")
@@ -726,6 +737,10 @@ loc_key = {RUN_C: "client", RUN_H: "hedge", "upfront": "upfront"}[fee_loc]
 
 def validate() -> list[str]:
     errs = params.problems()
+    if client is None:
+        errs.append("고객을 고르지 않았습니다. '2. 상대방'에서 거래의 고객을 고르세요")
+    if dealer is None:
+        errs.append("헤지 딜러를 고르지 않았습니다. '2. 상대방'에서 거래의 헤지 딜러를 고르세요")
     trades = [client_trade] + ([hedge_trade] if hedge_trade else [])
     for tr in trades:
         if tr.product != "IRS" and tr.legs[0].ccy == tr.legs[1].ccy:
@@ -787,6 +802,8 @@ def input_signature() -> str:
                  loc_key, fee_in, upfront, params))
 
 
+st.caption("계산할 상대방: 고객 " + (client.name if client else "(고르지 않음)") + ", 헤지 "
+           + (dealer.name if dealer else "(고르지 않음)") + ". 거래와 맞는지 확인하고 계산하세요.")
 if st.button("계산", type="primary"):
     errs = validate()
     if errs:
