@@ -13,6 +13,12 @@ from .trade import CSA, BankParams, Counterparty, Trade
 
 FX_SF = 0.04   # SA-CCR 환율 감독요인
 IR_SF = 0.005  # SA-CCR 금리 감독요인
+MIN_HOLD = 10 / 250   # 10영업일 (년). 코드의 MPOR 환산(영업일 / 250)과 같은 관행
+
+
+def floor_remaining(remaining: np.ndarray) -> np.ndarray:
+    """잔존만기에 10영업일 하한. 만기 시점 노드(잔존 0)는 그대로 0으로 둔다 (add-on 0, RC만 남김)."""
+    return np.where(remaining > 1e-9, np.maximum(remaining, MIN_HOLD), 0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -35,13 +41,13 @@ def addon_before_mf(trade: Trade, times: np.ndarray, fx_paths: dict, end: float)
 
     통화스왑·FX 선도: 환율 자산군, 4% x 조정명목
     IRS·OIS: 금리 자산군, 0.5% x 명목(원화) x 감독 듀레이션 SD = (1 - e^{-0.05 E}) / 0.05,
-             E = 잔존만기, 감독 델타 |1|. 거래 1건이라 헤징셋·만기 버킷 간 상계 없음
+             E = 잔존만기 (하한 10영업일, 267.자.(1). 만기 시점 노드는 0), 감독 델타 |1|. 거래 1건이라 헤징셋·만기 버킷 간 상계 없음
     end: 마지막 지급 시점 (MarketData.end_time)
     """
     if trade.product == "IRS":
         leg = trade.legs[0]
         remaining = np.maximum(end - times, 0.0)
-        sd = (1 - np.exp(-0.05 * remaining)) / 0.05
+        sd = (1 - np.exp(-0.05 * floor_remaining(remaining))) / 0.05
         return IR_SF * leg.notional * fx_paths[leg.ccy] * sd[None, :]
     return FX_SF * fx_adjusted_notional(trade, fx_paths)
 
@@ -52,7 +58,7 @@ def sa_ccr_ead(value: np.ndarray, trade: Trade, times: np.ndarray, fx_paths: dic
 
     마지막 지급 시점 t = end에서는 결제 직전 가치를 쓴다: 무담보는 RC만 남고(MF = 0) CVA는 M = 0으로 0.
     담보 상계 집합은 RC = 0이고 add-on도 0으로 둔다(EAD 0).
-    무담보: RC = max(V, 0), MF = sqrt(min(잔존만기, 1년))
+    무담보: RC = max(V, 0), MF = sqrt(min(잔존만기, 1년)), 잔존만기 하한 10영업일 (267.카.(1)). 만기 시점 노드는 MF = 0
     담보(VM, 임계치 0, 정산 지연 0): C = V → RC = max(-NICA, TH + MTA - NICA, 0) = 0,
           MF = 1.5 x sqrt(MPOR / 250)
     승수 = min(1, 0.05 + 0.95 x exp((V - C - NICA) / (2 x 0.95 x AddOn)))
@@ -69,7 +75,7 @@ def sa_ccr_ead(value: np.ndarray, trade: Trade, times: np.ndarray, fx_paths: dic
         excess = -np.broadcast_to(nica[None, :], addon.shape)
         rc = np.zeros_like(addon)
     else:
-        mf = np.sqrt(np.minimum(remaining, 1.0))
+        mf = np.sqrt(np.minimum(floor_remaining(remaining), 1.0))
         addon = base * mf[None, :]
         excess = value
         rc = np.maximum(value, 0.0)
