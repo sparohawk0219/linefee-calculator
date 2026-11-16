@@ -89,10 +89,12 @@ def capital_paths(ead: np.ndarray, cp: Counterparty, times: np.ndarray, p: BankP
     """필요자본 (원화, CET1 목표비율 기준). ead는 (시점) 또는 (경로 x 시점).
 
     신용: EAD x RW x 목표비율
-    BA-CVA(축약형, 헤지 없음): K = DS x RW_cva / alpha x M x DF(M) x EAD, M = 잔존만기(상한 없음)
+    BA-CVA(축약형, 헤지 없음): K = DS x RW_cva / alpha x M x DF(M) x EAD, M = max(잔존만기, 10영업일)(상한 없음)
           은행 CVA 포트폴리오 대비 증분 = K x 한계계수. 필요자본 = K x 12.5 x 목표비율
     """
-    m = np.maximum(end - times, 0.0)
+    # M 하한 10영업일: 126.다(상계계약 하 장외파생상품의 하한은 최소보유기간 10영업일), 5년 상한 해제는 313.(3).
+    # 126.가의 1년 하한은 쓰지 않는다 (상계계약 하 장외파생이라 126.다가 적용). 만기 시점 노드(잔존 0)는 M = 0 (RC만 남김).
+    m = floor_remaining(np.maximum(end - times, 0.0))
     dfm = np.where(m > 0, (1 - np.exp(-0.05 * m)) / np.maximum(0.05 * m, 1e-12), 0.0)
     k_cva = p.ba_cva_ds * cp.cva_rw / p.ba_cva_alpha * m * dfm * ead * p.ba_cva_marginal_factor
     return {
