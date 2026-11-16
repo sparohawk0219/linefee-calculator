@@ -304,7 +304,8 @@ def cp_inputs(prefix: str, title: str) -> Counterparty:
     name = st.text_input("이름", key=prefix + "name")
     c1, c2 = st.columns(2)
     rw = c1.number_input("신용 위험가중치 (%)", key=prefix + "rw", min_value=0.0, step=10.0,
-                         help="표준방법. 예: 공공기관 0%, 은행·동등 증권사 A등급 30%·BBB 50%, 기업 무등급 100%")
+                         help="표준방법. 예: 공공기관은 결손보전 기관 0%(별표3 32.가), 그 외 20~50%(32.나·다), "
+                              "은행·동등 증권사 A등급 30%·BBB 50%, 기업 무등급 100%")
     csa_name = c2.selectbox("CSA", list(CSA_TYPES), key=prefix + "csa")
     sector = st.selectbox("BA-CVA 업종", list(BA_CVA_RW), key=prefix + "sector")
     c3, c4, c5 = st.columns(3)
