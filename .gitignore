@@ -20,3 +20,5 @@ local/
 ui_eval/runs/
 # 거래상대방 마스터 실데이터 (가명 샘플 data/counterparties.sample.csv 만 커밋)
 data/counterparties.csv
+# 관리자가 저장한 은행 파라미터 (로컬 전용. 없으면 엔진 기본값)
+data/bank_params.json

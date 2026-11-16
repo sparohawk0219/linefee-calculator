@@ -162,10 +162,29 @@ def ui_layer(only=None) -> dict:
     거래 이름은 예시 목록의 순서로 붙인다 (UI:예시1 ...). 예시 이름을 바꿔도 같은 거래로 비교하기 위해서다.
     위젯 key 'preset'과 버튼 라벨 '계산', session_state['result']의 base·be에 의존한다.
     UI 개편으로 이 셋이 바뀌면 이 함수만 맞춰 고친다 (값 비교 기준은 그대로).
+    로그인하지 않은 일반 사용자 화면으로 실행한다 (비밀값 파일이 없어도 돌아야 한다).
     """
+    import os
+    import tempfile
+
+    # 화면이 읽는 데이터 디렉터리를 빈 임시 폴더로 돌린다: 로컬 상대방 마스터(data/counterparties.csv)와 관리자가 저장한
+    # 은행 파라미터가 있어도 가명 샘플 마스터 + 엔진 기본값으로 계산한다 (tools/prompts/B_COMMON.md "화면 계약")
+    os.environ["LINEFEE_DATA_DIR"] = tempfile.mkdtemp(prefix="linefee_golden_")
+    res = {}
+    if (ROOT / "ui" / "testing.py").exists():
+        # 화면 프레임워크를 바꾼 경우(DECISIONS O11): 화면이 내놓는 시험용 진입점으로 같은 값을 읽는다.
+        # golden_results()는 일반 사용자 화면에서 예시 거래를 순서대로 불러와 '계산'한 결과 [(예시 이름, base, be)]를 돌려준다
+        from ui.testing import golden_results
+        for i, (name, base, be) in enumerate(golden_results(), 1):
+            key = f"UI:예시{i}"
+            if only and key not in only:
+                continue
+            res[key] = run_metrics(base, be)
+            print(f"  ui     {name}: 순마진 {res[key]['net'] / 1e8:+.3f}억", flush=True)
+        return res
+
     from streamlit.testing.v1 import AppTest
 
-    res = {}
     at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=600)
     at.run()
     if at.exception:

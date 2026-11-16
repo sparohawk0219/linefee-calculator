@@ -1,6 +1,7 @@
 """경로 게이트: 이 체크아웃에서 바뀐 파일이 역할의 허용 목록 안에 있는지 확인한다.
 
     python tools/path_gate.py --role ui               # main 대비 커밋 + 작업 트리 변경(추적 안 된 새 파일 포함)
+    python tools/path_gate.py --role ui --base b-h    # 태그·커밋도 기준이 된다 (그 뒤에 바뀐 파일만 본다)
     python tools/path_gate.py --role implementer --base main
     python tools/path_gate.py --list
 
@@ -17,7 +18,10 @@ from _common import git, utf8_stdout  # noqa: E402
 
 # 어떤 역할도 바꿀 수 없다 (사용자 승인·총괄만)
 FORBIDDEN = ["docs/DECISIONS.md", "tools/*", "tools/**", ".gitignore", ".env", ".streamlit/secrets.toml",
-             "market_snapshot.json", "linefee/market_snapshot.json", "local/*", "local/**"]
+             "market_snapshot.json", "linefee/market_snapshot.json", "local/*", "local/**",
+             # Track B: 총괄이 쓴 평가 계약·과제·정답 생성·가명 샘플 마스터, 로컬 전용 데이터
+             "ui_eval/contract.py", "ui_eval/make_answers.py", "ui_eval/tasks_public.yaml",
+             "data/counterparties.sample.csv", "data/counterparties.csv", "data/bank_params.json"]
 
 ROLES = {
     # Track A
@@ -28,9 +32,9 @@ ROLES = {
     "implementer": ["linefee/**", "app.py", "tests/**", "docs/METHODOLOGY_v1.md", "DESIGN.md", "*.py",
                     "requirements.txt", "reg/**", "README.md"],               # I: accept 항목이 가리키는 파일 (DECISIONS·tools·ui_eval 제외)
     # Track B
-    "harness": ["ui_eval/**", "tests/test_score.py"],            # H: 평가 하니스
-    "ui": ["app.py", "ui/**", "data/counterparties.sample.csv",  # U0, U: 화면만. 엔진·하니스·테스트 금지
-           ".streamlit/secrets.toml.example"],
+    "harness": ["ui_eval/**", "tests/test_score.py"],            # H: 평가 하니스 (위 금지 목록의 ui_eval 파일 3개 제외)
+    "ui": ["app.py", "ui/**", ".streamlit/secrets.toml.example",  # U0, U: 화면만. 엔진·하니스 금지
+           "tests/test_app.py", "requirements.txt", "README.md"],  # 화면 테스트·실행 안내는 화면과 함께 맞춘다
     "persona": [],                                               # P: 아무것도 바꾸지 않는다 (로그는 gitignore된 ui_eval/runs/)
 }
 # ui_eval/ 은 harness만. implementer의 "*.py"는 루트의 .py만 가리킨다 (fnmatch의 *는 /도 넘으므로 아래에서 따로 처리)
