@@ -3,7 +3,7 @@
 - 모델: **sonnet**
 - 입력: `reviews/ledger.jsonl` (총괄 쪽에서 `python tools/ledger.py merge`를 돌린 뒤 시작한다)
 - 출력: `python tools/ledger.py verify <id> <상태> <메모>` 로만 기록한다. 파일을 직접 고치지 않는다.
-- 먼저 `tools/prompts/A1_COMMON.md`를 읽고 그 규칙을 따른다 (읽기 전용, DECISIONS 전제, 공개 저장소 주의).
+- 먼저 `tools/prompts/A1_COMMON.md`를 읽고 그 규칙을 따른다 (읽기 전용, DECISIONS 전제, 기록은 로컬 전용).
 
 ## 맡은 질문
 
