@@ -790,7 +790,7 @@ if st.button("계산", type="primary"):
         st.session_state["result"] = dict(deal=deal, base=base, be=be, zero=zero, be_running=be_running,
                                           hedge_kind=hedge_kind, loc=loc_key, fee=fee_delta(client_trade, fee_in),
                                           upfront=upfront * OKU, unit_pv=fee_unit_pv(deal, m), is_fx=is_fx,
-                                          qu=QU, client_no_fee=client_trade, params=params, sig=sig)
+                                          qu=QU, client_no_fee=client_trade, params=params, sig=sig, product_key=product)
 
 res = st.session_state.get("result")
 if res and (not isinstance(res["base"], Run) or "sig" not in res):
@@ -825,7 +825,7 @@ if res:
     hk = {"btb": "BTB", "line": "딜러 라인 Par", "ccp": "CCP", "direct": "직접 입력"}[res["hedge_kind"]]
     st.markdown(
         f"**입력 요약** (이 결과를 계산한 입력)  \n"
-        f"상품 {PRODUCTS[ct.product]}, 만기 {ct.maturity:g}년  \n"
+        f"상품 {PRODUCTS[res.get('product_key', ct.product)]}, 만기 {ct.maturity:g}년  \n"
         f"{leg_txt}  \n"
         f"고객 {deal.client.name}, 헤지 {deal.dealer.name} ({hk}), 라인피 {fee_txt}")
     be_line = ("0% 미만 (어떤 요구수익률에서도 손실)" if hb is None
