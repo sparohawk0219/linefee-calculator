@@ -414,6 +414,8 @@ with st.sidebar:
     n_paths = st.select_slider("경로 수", [2000, 5000, 10000, 20000], value=5000)
     vol_scale = st.number_input("금리 변동성 배수", value=1.0, min_value=0.0, step=0.1)
     kappa = st.number_input("금리 평균회귀 (연)", value=0.0, step=0.01)
+    if kappa < 0:
+        st.warning("음수 평균회귀는 금리 요인이 시간이 갈수록 발산하는 모형입니다. 계산은 그대로 하지만 비현실적인 값일 수 있습니다.")
 
 params = BankParams(capital_ratio=cap_ratio / 100, hurdle_after_tax=hurdle / 100, tax_rate=tax / 100,
                     ftp_spread=ftp / 1e4, ftp_spread_krw=ftp_krw / 1e4, kva_funding_spread=kva_sp / 1e4,

@@ -64,15 +64,25 @@ def factor_setup(m: MarketData, ccys: set, maturity: float, p: BankParams,
     return labels, sigma, _nearest_corr(corr)
 
 
+KAPPA_EPS = 1e-12   # |kappa|가 이보다 작으면 0 (Ho-Lee)으로 본다. kappa < 0(발산하는 OU)도 OU 식이 그대로 성립한다
+
+
+def _step_sd(sigma: float, kappa: float, dt: float) -> float:
+    """한 구간 동안 OU 요인의 표준편차. kappa != 0: sigma sqrt((1 - e^{-2 kappa dt}) / (2 kappa)), 0이면 sigma sqrt(dt)."""
+    if abs(kappa) < KAPPA_EPS:
+        return sigma * np.sqrt(dt)
+    return sigma * np.sqrt((1 - np.exp(-kappa * dt)**2) / (2 * kappa))
+
+
 def _ou(z: np.ndarray, sigma: float, kappa: float, dt: float) -> tuple[np.ndarray, np.ndarray]:
     paths, steps = z.shape
     decay = np.exp(-kappa * dt)
-    sd = sigma * (np.sqrt((1 - decay**2) / (2 * kappa)) if kappa > 0 else np.sqrt(dt))
+    sd = _step_sd(sigma, kappa, dt)
     x = np.zeros((paths, steps + 1))
     for i in range(steps):
         x[:, i + 1] = x[:, i] * decay + sd * z[:, i]
     t = np.arange(steps + 1) * dt
-    var = sigma**2 * ((1 - np.exp(-2 * kappa * t)) / (2 * kappa) if kappa > 0 else t)
+    var = sigma**2 * (t if abs(kappa) < KAPPA_EPS else (1 - np.exp(-2 * kappa * t)) / (2 * kappa))
     return x, var
 
 
@@ -114,7 +124,7 @@ def simulate(m: MarketData, ccys: set, horizon: float, p: BankParams, local: boo
         if c not in x:
             continue
         rho = corr[labels.index(f"r_{c}"), labels.index(f"fx_{c}")]
-        sdx = sigma[c] * (np.sqrt((1 - decay**2) / (2 * kappa)) if kappa > 0 else np.sqrt(dt))
+        sdx = _step_sd(sigma[c], kappa, dt)
         cov = np.zeros(n + 1)
         for i in range(n):
             cov[i + 1] = cov[i] * decay + rho * sd[i] * sdx
@@ -123,7 +133,7 @@ def simulate(m: MarketData, ccys: set, horizon: float, p: BankParams, local: boo
 
 
 def _b(tau: np.ndarray, kappa: float) -> np.ndarray:
-    return (1 - np.exp(-kappa * tau)) / kappa if kappa > 0 else tau
+    return tau if abs(kappa) < KAPPA_EPS else (1 - np.exp(-kappa * tau)) / kappa
 
 
 LIVE_EPS = 1e-9   # 지급일 = t인 현금흐름은 아직 남은 것으로 본다
