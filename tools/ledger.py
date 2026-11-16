@@ -4,6 +4,7 @@
     python tools/ledger.py verify L-003 reproduced|refuted|unverifiable [메모]
     python tools/ledger.py render                     # reviews/TRIAGE.md (사용자 분류용)
     python tools/ledger.py decide L-003 accept|reject|defer [메모]
+    python tools/ledger.py impl   L-003 done|partial|skipped [커밋 해시와 한 일]   # 구현자 기록
     python tools/ledger.py close  L-003 closed|not-closed [근거]
     python tools/ledger.py status
     python tools/ledger.py show L-003
@@ -25,9 +26,10 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import ROOT, utf8_stdout  # noqa: E402
+from _common import ROOT, main_root, utf8_stdout  # noqa: E402
 
-REVIEWS = ROOT / "reviews"
+# 리뷰 노트는 로컬 전용(DECISIONS O9)이라 메인 체크아웃에만 있다. worktree에서 실행해도 그쪽을 쓴다
+REVIEWS = main_root() / "reviews"
 LEDGER = REVIEWS / "ledger.jsonl"
 TRIAGE = REVIEWS / "TRIAGE.md"
 
@@ -38,6 +40,7 @@ REQUIRED = ["id", "severity", "category", "file", "line", "claim", "repro_comman
 VERIFY = ["reproduced", "refuted", "unverifiable"]
 DECIDE = ["accept", "reject", "defer"]
 CLOSE = ["closed", "not-closed"]
+IMPL = ["done", "partial", "skipped"]
 
 
 def read_jsonl(path: Path) -> list:
@@ -143,6 +146,8 @@ def setter(field: str, note_field: str, allowed: list):
         rows = load()
         r = find(rows, a.id)
         r[field], r[note_field] = a.value, " ".join(a.note)
+        if field == "impl":   # 다시 구현하면 이전 종결 판정은 무효
+            r["closure"], r["closure_note"] = None, ""
         save(rows)
         print(f"{r['id']} {field} = {a.value}")
         return 0
@@ -165,6 +170,7 @@ def cmd_status(_):
     print("검증:   " + count("verify", VERIFY + [None]))
     print("결정:   " + count("decision", DECIDE + [None]))
     acc = [r for r in rows if r["decision"] == "accept"]
+    print("구현:   " + ", ".join(f"{v or '미정'} {sum(1 for r in acc if r.get('impl') == v)}" for v in IMPL + [None]))
     print(f"종결:   accept {len(acc)}건 중 closed {sum(1 for r in acc if r['closure'] == 'closed')}, "
           f"not-closed {sum(1 for r in acc if r['closure'] == 'not-closed')}, "
           f"미점검 {sum(1 for r in acc if r['closure'] is None)}")
@@ -221,7 +227,7 @@ def cmd_render(_):
         out += [f"## 중복 후보 ({len(dups)}건)", ""]
         out += [f"- **{r['id']}** → {r['duplicate_of']}: {cell(r['claim'])}" for r in dups] + [""]
     TRIAGE.write_text("\n".join(out), encoding="utf-8")
-    print(f"{TRIAGE.relative_to(ROOT)} 작성: 분류 대상 {len(live)}건")
+    print(f"{TRIAGE} 작성: 분류 대상 {len(live)}건")
     return 0
 
 
@@ -236,6 +242,7 @@ def main():
     s.add_argument("id")
     s.set_defaults(fn=cmd_show)
     for name, field, note, allowed in (("verify", "verify", "verify_note", VERIFY),
+                                       ("impl", "impl", "impl_note", IMPL),
                                        ("decide", "decision", "decision_note", DECIDE),
                                        ("close", "closure", "closure_note", CLOSE)):
         s = sub.add_parser(name)

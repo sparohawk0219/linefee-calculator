@@ -26,7 +26,7 @@ ROLES = {
     "closer": ["reviews/ledger.jsonl"],                          # C: tools/ledger.py close 로만 기록
     "a1-run": ["reviews/**"],                                    # Run A1 전체가 끝난 뒤의 게이트 (발견사항 + 원장 + TRIAGE)
     "implementer": ["linefee/**", "app.py", "tests/**", "docs/METHODOLOGY_v1.md", "DESIGN.md", "*.py",
-                    "requirements.txt", "reg/**"],               # I: accept 항목이 가리키는 파일 (DECISIONS·tools·ui_eval 제외)
+                    "requirements.txt", "reg/**", "README.md"],               # I: accept 항목이 가리키는 파일 (DECISIONS·tools·ui_eval 제외)
     # Track B
     "harness": ["ui_eval/**", "tests/test_score.py"],            # H: 평가 하니스
     "ui": ["app.py", "ui/**", "data/counterparties.sample.csv",  # U0, U: 화면만. 엔진·하니스·테스트 금지

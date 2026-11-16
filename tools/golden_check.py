@@ -4,6 +4,8 @@
     python tools/golden_check.py --write    # 기준값 새로 쓰기 (사용자 승인 후에만)
     python tools/golden_check.py --ui       # 대시보드 경로(AppTest)도 함께 비교
     python tools/golden_check.py --only CCS_USDKRW_5Y_LINE
+    python tools/golden_check.py --ui --save local/a2/after_L-002.json      # 지금 값을 따로 저장 (기준값은 그대로)
+    python tools/golden_check.py --ui --baseline local/a2/after_L-002.json  # 그 파일과 비교 (항목별 증분 확인)
 
 기준값은 local/golden_baseline.json (gitignore, 커밋 금지: docs/DECISIONS.md O2).
 worktree에서 실행해도 메인 체크아웃의 local/과 시장 스냅샷을 쓴다. 스냅샷이 worktree에 없으면
@@ -61,15 +63,20 @@ def golden_deals():
     corp = "소재·에너지·산업재·농업·제조·광업"
     fin = "금융기관(정부보증 금융 포함)"
     pub = "지방정부·정부보증 비금융·공공기관"
-    lh = Counterparty("LH", 0.0, cva(pub), 0.0, 0.6, CSA())
-    nomura = Counterparty("노무라", 0.50, cva(fin), 0.0, 0.6, CSA(vm=True, im=True))
+    client_a = Counterparty("공공기관 A", 0.0, cva(pub), 0.0, 0.6, CSA())
+    dealer_b = Counterparty("딜러 B", 0.50, cva(fin), 0.0, 0.6, CSA(vm=True, im=True))
     corp_cl = Counterparty("기업 고객", 1.00, cva(corp), 0.002, 0.6, CSA())
     corp_hy = Counterparty("기업 고객(무등급)", 1.00, cva(corp, False), 0.01, 0.6, CSA())
     dealer_im = Counterparty("헤지 딜러", 0.50, cva(fin), 0.0, 0.6, CSA(vm=True, im=True))
     dealer_vm = Counterparty("헤지 딜러", 0.50, cva(fin), 0.0, 0.6, CSA(vm=True))
 
+    # CCP 거래익스포져의 SA-CCR MPOR. 화면(app.py)이 쓰는 값과 같아야 한다: linefee.trade.CCP_REG_MPOR_DAYS (없으면 이전 값 5)
+    import linefee.trade as _t
+    ccp_mpor = getattr(_t, "CCP_REG_MPOR_DAYS", 5)
+
     def ccp(ccy):
-        return Counterparty("CCP", 0.02, 0.0, 0.0, 0.6, CSA(vm=True, im=False, reg_mpor_days=5, ccy=ccy, ccp=True))
+        return Counterparty("CCP", 0.02, 0.0, 0.0, 0.6,
+                            CSA(vm=True, im=False, reg_mpor_days=ccp_mpor, ccy=ccy, ccp=True))
 
     def jpykrw(m):
         return Trade([Leg("KRW", 1e10 * m.spot_quote["JPY"], "receive", rate=0.0403, day_count="ACT/360"),
@@ -101,11 +108,11 @@ def golden_deals():
 
     return [
         ("CCS_JPYKRW_30Y_BTB_CLIENT10", "legacy",
-         lambda m: build_deal(jpykrw(m), lh, nomura, fee_location="client", fee=10.0)),
+         lambda m: build_deal(jpykrw(m), client_a, dealer_b, fee_location="client", fee=10.0)),
         ("CCS_JPYKRW_30Y_BTB_HEDGE10", "legacy",
-         lambda m: build_deal(jpykrw(m), lh, nomura, fee_location="hedge", fee=10.0)),
+         lambda m: build_deal(jpykrw(m), client_a, dealer_b, fee_location="hedge", fee=10.0)),
         ("CCS_JPYKRW_30Y_BTB_UPFRONT5", "legacy",
-         lambda m: build_deal(jpykrw(m), lh, nomura, fee_location="upfront", upfront_krw=5e8)),
+         lambda m: build_deal(jpykrw(m), client_a, dealer_b, fee_location="upfront", upfront_krw=5e8)),
         ("CCS_USDKRW_5Y_LINE", "latest", lambda m: line(usdkrw_ccs(m), m, corp_cl, dealer_im, 10.0)),
         ("CCS_USDKRW_5Y_LINE_REV_HY", "latest", lambda m: line(usdkrw_ccs_rev(m), m, corp_hy, dealer_im, 10.0)),
         ("FXFWD_USDKRW_1Y_LINE", "latest", lambda m: line(fxfwd(m), m, corp_cl, dealer_vm, 1.0)),
@@ -152,6 +159,7 @@ def engine_layer(only=None) -> dict:
 def ui_layer(only=None) -> dict:
     """app.py를 AppTest로 돌려 예시 거래의 계산 결과(session_state['result'])를 읽는다.
 
+    거래 이름은 예시 목록의 순서로 붙인다 (UI:예시1 ...). 예시 이름을 바꿔도 같은 거래로 비교하기 위해서다.
     위젯 key 'preset'과 버튼 라벨 '계산', session_state['result']의 base·be에 의존한다.
     UI 개편으로 이 셋이 바뀌면 이 함수만 맞춰 고친다 (값 비교 기준은 그대로).
     """
@@ -163,8 +171,8 @@ def ui_layer(only=None) -> dict:
     if at.exception:
         sys.exit(f"app.py 실행 오류: {at.exception[0].value}")
     presets = list(at.selectbox(key="preset").options)
-    for name in presets:
-        key = "UI:" + name
+    for i, name in enumerate(presets, 1):
+        key = f"UI:예시{i}"
         if only and key not in only:
             continue
         at.selectbox(key="preset").set_value(name).run()
@@ -209,15 +217,28 @@ def main():
     ap.add_argument("--ui", action="store_true", help="대시보드 경로(AppTest)도 계산한다")
     ap.add_argument("--only", nargs="*", help="이 이름의 거래만")
     ap.add_argument("--baseline", default=None, help=f"기준값 파일 (기본 local/{BASELINE})")
+    ap.add_argument("--save", default=None, help="지금 값을 이 파일에 저장한다 (기준값 파일은 건드리지 않는다)")
     a = ap.parse_args()
 
     ensure_snapshots()
     path = Path(a.baseline) if a.baseline else local_dir() / BASELINE
+    if not path.is_absolute():
+        path = local_dir().parent / path        # 상대 경로는 메인 체크아웃 기준
     print(f"체크아웃 {ROOT}\n기준값   {path}")
     now = {"meta": {"seed": SEED, "n_paths": N_PATHS, "snapshots": snapshot_hashes()},
            "engine": engine_layer(a.only)}
     if a.ui:
         now["ui"] = ui_layer(a.only)
+
+    if a.save:
+        out = Path(a.save)
+        if not out.is_absolute():
+            out = local_dir().parent / out      # 상대 경로는 메인 체크아웃 기준 (local/ 은 메인에만 있다)
+        if out.resolve() == (local_dir() / BASELINE).resolve():
+            sys.exit("--save 로 기준값 파일을 덮어쓸 수 없습니다 (--write 를 쓴다)")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(now, indent=1, ensure_ascii=False, sort_keys=True), encoding="utf-8")
+        print(f"지금 값 저장: {out}")
 
     if a.write:
         if a.only:
@@ -248,6 +269,20 @@ def main():
         n = sum(len(now[k]) for k in ("engine", "ui") if k in now)
         print(f"통과: {n}건 모두 기준값과 같습니다.")
         return 0
+    print("\n거래별 요약 (억원. 손익분기 추가폭은 통화스왑·IRS 연 bp, FX 선도 원/외화 1단위)")
+    print("| 층 | 거래 | 첫날 이익 전→후 | 비용 합계 전→후 | 순마진 전→후 | 순마진 차이 | 손익분기 추가폭 전→후 |")
+    print("|---|---|---:|---:|---:|---:|---:|")
+    for layer in ("engine", "ui"):
+        for trade, y in sorted(now.get(layer, {}).items()):
+            x = old.get(layer, {}).get(trade)
+            if x is None:
+                print(f"| {layer} | {trade} | (기준값에 없음) | | | | |")
+                continue
+            scale = 1.0 if abs(y["be.extra"]) > 0.05 else 1e4   # FX 선도는 원 단위 그대로, 나머지는 연 소수 → bp
+            print(f"| {layer} | {trade} | {x['day1'] / 1e8:,.3f} → {y['day1'] / 1e8:,.3f} | "
+                  f"{x['total_cost'] / 1e8:,.3f} → {y['total_cost'] / 1e8:,.3f} | "
+                  f"{x['net'] / 1e8:,.3f} → {y['net'] / 1e8:,.3f} | {(y['net'] - x['net']) / 1e8:+.4f} | "
+                  f"{x['be.extra'] * scale:.3f} → {y['be.extra'] * scale:.3f} |")
     print(f"\n차이 {len(rows)}개 (단위: 원. be.extra는 연 소수 또는 원/외화 1단위)")
     print("| 층 | 거래 | 항목 | 기준값 | 지금 | 차이 |\n|---|---|---|---:|---:|---:|")
     for layer, trade, k, x, y, d in rows:
