@@ -22,8 +22,8 @@ import linefee.trade
 
 # 서버 실행 중 엔진 파일이 바뀌면 다시 읽는다. Streamlit은 app.py만 다시 실행하고
 # 이미 import한 하위 모듈은 그대로 둘 수 있어, 바뀐 계산 코드가 반영되지 않는 경우가 있었다.
-_ENGINE = ["linefee.curves", "linefee.market", "linefee.trade", "linefee.engine", "linefee.regcap",
-           "linefee.pricing"]
+_ENGINE = ["linefee.curves", "linefee.market", "linefee.trade", "linefee.engine", "simm", "linefee.regcap",
+           "linefee.pricing"]   # simm은 linefee.regcap이 from simm import ...로 묶으므로 그보다 먼저
 
 
 @st.cache_resource
@@ -91,13 +91,16 @@ if not LEGACY_SNAPSHOT.exists():   # 회귀 기준 스냅샷이 없으면 그 �
 # 시장 데이터
 # ---------------------------------------------------------------------------
 @st.cache_resource
-def _load_market(source: str, engine_version: tuple):
+def _load_market(source: str, engine_version: tuple, snapshot_mtime: float):
     # engine_version: 엔진 파일 수정 시각. 엔진이 바뀌면 키가 달라져 시장 객체도 새 클래스로 다시 만든다
+    # snapshot_mtime: 스냅샷 파일 수정 시각. 앱 밖에서 스냅샷을 새로 받아도 키가 바뀌어 다시 읽는다
     return load_legacy() if source == "legacy" else load()
 
 
 def get_market(source: str):
-    return _load_market(source, tuple(sorted(_engine_mtimes().items())))
+    path = LEGACY_SNAPSHOT if source == "legacy" else SNAPSHOT
+    mtime = path.stat().st_mtime if path.exists() else 0.0
+    return _load_market(source, tuple(sorted(_engine_mtimes().items())), mtime)
 
 
 get_market.clear = _load_market.clear
