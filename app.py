@@ -386,9 +386,10 @@ with st.sidebar:
                 st.error(f"실패: {e}")
 
     st.header("은행 파라미터")
-    cap_ratio = st.number_input("CET1 목표비율 (%)", value=13.0, step=0.5)
-    hurdle = st.number_input("세후 요구수익률 (%)", value=10.0, step=0.5)
-    tax = st.number_input("세율 (%)", value=27.5, step=0.5)
+    cap_ratio = st.number_input("CET1 목표비율 (%)", value=13.0, min_value=0.0, step=0.5)
+    hurdle = st.number_input("세후 요구수익률 (%)", value=10.0, min_value=0.0, step=0.5)
+    tax = st.number_input("세율 (%)", value=27.5, min_value=0.0, max_value=99.9, step=0.5,
+                          help="0% 이상 100% 미만 (요구수익률을 세전으로 환산할 때 1 - 세율로 나눈다)")
     ftp = st.number_input("USD 담보 조달 FTP 스프레드 (bp)", value=12.0, step=1.0,
                           help="FTP - CSA 담보 이자(SOFR). USD 현금 담보 VM의 FVA에 쓴다")
     ftp_krw = st.number_input("KRW 담보 조달 FTP 스프레드 (bp)", value=12.0, step=1.0,
@@ -398,12 +399,12 @@ with st.sidebar:
     kva_curve = st.radio("KVA 조달금리 기준 커브", ["원화 IRS (CD)", "원화 CCS (USD 담보, 비교용)"], horizontal=True,
                          help="자본이 대체하는 KRW 조달의 기준금리. 원화 IRS(CD)가 확정 방식")
     fba = st.checkbox("받은 담보 조달이익(FBA) 인정", value=True)
-    marginal = st.number_input("BA-CVA 한계계수", value=0.5, step=0.05,
+    marginal = st.number_input("BA-CVA 한계계수", value=0.5, min_value=0.0, step=0.05,
                                help="은행 CVA 포트폴리오 대비 증분. 완전 분산이면 0.5(rho)")
     im_spread = st.number_input("낸 IM 조달 스프레드 (bp)", value=0.0, step=1.0)
     st.header("시뮬레이션")
     n_paths = st.select_slider("경로 수", [2000, 5000, 10000, 20000], value=5000)
-    vol_scale = st.number_input("금리 변동성 배수", value=1.0, step=0.1)
+    vol_scale = st.number_input("금리 변동성 배수", value=1.0, min_value=0.0, step=0.1)
     kappa = st.number_input("금리 평균회귀 (연)", value=0.0, step=0.01)
 
 params = BankParams(capital_ratio=cap_ratio / 100, hurdle_after_tax=hurdle / 100, tax_rate=tax / 100,
@@ -505,7 +506,7 @@ loc_key = {RUN_C: "client", RUN_H: "hedge", "upfront": "upfront"}[fee_loc]
 
 
 def validate() -> list[str]:
-    errs = []
+    errs = params.problems()
     trades = [client_trade] + ([hedge_trade] if hedge_trade else [])
     for tr in trades:
         if tr.product != "IRS" and tr.legs[0].ccy == tr.legs[1].ccy:

@@ -128,6 +128,17 @@ class BankParams:
     antithetic: bool = True              # 대조 난수 (경로 i와 i + n/2가 부호만 반대)
     seed: int = 11
 
+    def problems(self) -> list[str]:
+        """파라미터 범위 위반 목록 (앱 입력 위젯의 min/max와 같은 조건). 금리 평균회귀 kappa는 음수를 허용하므로 검사하지 않는다."""
+        errs = []
+        if not 0.0 <= self.tax_rate < 1.0:
+            errs.append("세율은 0% 이상 100% 미만")
+        for name, v in (("CET1 목표비율", self.capital_ratio), ("세후 요구수익률", self.hurdle_after_tax),
+                        ("BA-CVA 한계계수", self.ba_cva_marginal_factor), ("금리 변동성 배수", self.rate_vol_scale)):
+            if v < 0.0:
+                errs.append(f"{name}은 0 이상")
+        return errs
+
     def ftp_for(self, ccy: str) -> float:
         """담보 통화별 조달 스프레드."""
         return self.ftp_spread_krw if ccy == "KRW" else self.ftp_spread
