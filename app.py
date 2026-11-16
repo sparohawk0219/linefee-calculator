@@ -43,7 +43,8 @@ def _reload_engine_if_changed():
 
 _reload_engine_if_changed()
 
-from linefee.market import SNAPSHOT, fetch, load, load_legacy  # noqa: E402  (다시 읽은 뒤 이름을 묶는다)
+from linefee.market import (LEGACY_SNAPSHOT, SNAPSHOT, fetch, load, load_legacy,  # noqa: E402  (다시 읽은 뒤 이름을 묶는다)
+                            snapshot_guide)
 from linefee.engine import trade_value_today  # noqa: E402
 from linefee.pricing import (Run, annual_pnl, breakeven, fee_unit_pv, market_gap,  # noqa: E402
                              market_hedge, par_client, run)
@@ -77,6 +78,13 @@ def fee_loc_label(loc: str, fx: bool) -> str:
 MARKETS = {"최신 (블룸버그 스냅샷)": "latest", "엔/원 검토 기준 (2026-11-11, KRW·JPY만)": "legacy"}
 
 st.set_page_config(page_title="라인피 계산기", layout="wide")
+
+if not SNAPSHOT.exists():   # 스냅샷은 로컬 전용: 트레이스백 대신 안내하고 멈춘다
+    st.error("시장 스냅샷이 없어 계산할 수 없습니다.")
+    st.code(snapshot_guide(SNAPSHOT), language=None)
+    st.stop()
+if not LEGACY_SNAPSHOT.exists():   # 회귀 기준 스냅샷이 없으면 그 선택지만 뺀다
+    MARKETS.pop("엔/원 검토 기준 (2026-11-11, KRW·JPY만)")
 
 
 # ---------------------------------------------------------------------------

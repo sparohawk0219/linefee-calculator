@@ -3,6 +3,7 @@
 기존 모델(xva_model.py, 2026-11-11 스냅샷) 결과와 나란히 출력한다.
     python -m tests.regression_jpykrw
 """
+import sys
 import time
 
 from assumptions import Assumptions
@@ -57,4 +58,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except FileNotFoundError as e:   # 스냅샷은 로컬 전용 (L-018)
+        sys.exit(str(e))

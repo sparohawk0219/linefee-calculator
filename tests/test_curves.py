@@ -5,6 +5,8 @@
 
 허용오차 0.01bp (FX 선도 0.001원). 엔진은 OIS 지급 지연(2영업일)을 무시하므로 그만큼(최대 약 0.005bp)의 차이는 남는다.
 """
+import sys
+
 from linefee.market import load
 from linefee.pricing import market_hedge
 from linefee.trade import Leg, Trade
@@ -106,4 +108,7 @@ def test_reprice_inputs():
 
 
 if __name__ == "__main__":
-    check()
+    try:
+        check()
+    except FileNotFoundError as e:   # 스냅샷은 로컬 전용 (L-018)
+        sys.exit(str(e))

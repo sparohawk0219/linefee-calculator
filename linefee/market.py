@@ -70,6 +70,21 @@ HIST_TICKERS = {
 FACTORS = ["r_USD", "r_KRW", "r_JPY", "fx_USD", "fx_JPY"]
 
 
+def snapshot_guide(path: Path) -> str:
+    """스냅샷 파일이 없을 때 보이는 안내 (앱·테스트 공통)."""
+    return (f"시장 스냅샷이 없다: {path.name} ({path})" + chr(10)
+            + "스냅샷은 블룸버그 라이선스 데이터라 저장소에 없고 로컬에만 둔다 (docs/DECISIONS.md O1)." + chr(10)
+            + "  - 최신 스냅샷 (linefee/market_snapshot.json): 블룸버그 터미널이 켜진 PC에서 python -m linefee.market 으로 받는다 "
+            + "(blpapi 필요, requirements.txt 참고)." + chr(10)
+            + "  - 회귀 기준 스냅샷 (루트 market_snapshot.json, 2026-11-11): 새로 받을 수 없다. 기존 작업 PC의 파일을 복사해 둔다." + chr(10)
+            + "자세한 절차는 README.md.")
+
+
+def require_snapshot(path: Path) -> None:
+    if not path.exists():
+        raise FileNotFoundError(snapshot_guide(path))
+
+
 # ---------------------------------------------------------------------------
 # 날짜 (블룸버그와 무관)
 # ---------------------------------------------------------------------------
@@ -235,6 +250,7 @@ def _set_today(as_of: str) -> ql.Date:
 
 
 def load(path: Path = SNAPSHOT) -> MarketData:
+    require_snapshot(path)
     snap = json.loads(path.read_text(encoding="utf-8"))
     check_snapshot(snap)
     check_business_day(snap["as_of"])
@@ -278,6 +294,7 @@ def load_legacy(path: Path = LEGACY_SNAPSHOT) -> MarketData:
       - KRW·JPY 할인 커브는 1년물 CCS·베이시스부터 부트스트랩한다 (1년 이내는 1년 구간 선도 평탄)
       - 베이시스 헬퍼의 USD 다리(SOFR 플랫, 담보 통화)는 어떤 USD 커브에서도 Par이므로 4% 평탄 커브를 쓴다
     """
+    require_snapshot(path)
     snap = json.loads(path.read_text(encoding="utf-8"))
     check_business_day(snap["as_of"], ("KRW", "JPY"))
     today = _set_today(snap["as_of"])

@@ -196,7 +196,10 @@ def fva_check():
 TASKS = {"client_a": client_a, "equiv": equiv, "hedge": hedge, "mc": mc, "irs": irs, "martingale": martingale, "fva": fva_check, "grid": grid}
 
 if __name__ == "__main__":
-    for k in sys.argv[1:] or TASKS:
-        t0 = time.time()
-        TASKS[k]()
-        print(f"  ({time.time() - t0:.0f}초)")
+    try:
+        for k in sys.argv[1:] or TASKS:
+            t0 = time.time()
+            TASKS[k]()
+            print(f"  ({time.time() - t0:.0f}초)")
+    except FileNotFoundError as e:   # 스냅샷은 로컬 전용 (L-018)
+        sys.exit(str(e))
