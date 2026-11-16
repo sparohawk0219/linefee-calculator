@@ -3,15 +3,20 @@
     python -m tests.test_curves      # 표 출력 + 허용오차 검사
     python -m pytest tests/test_curves.py   # pytest가 설치돼 있으면
 
-허용오차 0.01bp (FX 선도 0.001원). 엔진은 OIS 지급 지연(2영업일)을 무시하므로 그만큼(최대 약 0.005bp)의 차이는 남는다.
+허용오차 0.006bp (FX 선도 0.001원), METHODOLOGY_v1.md의 서술과 같은 숫자.
+엔진은 OIS 지급 지연(2영업일)을 무시하므로 그만큼의 차이는 남는다 (실측 최대 JPY OIS 25년 0.0058bp).
+1주 OIS·1주 스왑포인트·CD 91일은 엔진 일정이 개월 단위라 커브에서 직접 재평가한다.
 """
 import sys
 
+import QuantLib as ql
+
+from linefee import curves as cv
 from linefee.market import load
 from linefee.pricing import market_hedge
 from linefee.trade import Leg, Trade
 
-TOL_BP = 0.01
+TOL_BP = 0.006
 TOL_FX = 0.001
 
 
@@ -59,6 +64,38 @@ def fx_outright(m, ccy, label):
     return 1e6 * 150 / next(l for l in h.legs if l.ccy == "USD").notional
 
 
+def _t(m, d) -> float:
+    return cv.DC365.yearFraction(cv.qdate(m.as_of), d)
+
+
+def ois_par_1w(m, ccy, dc):
+    """1주 OIS 파 금리. 지급이 한 번이라 지급 지연은 양 다리에서 상쇄된다. 엔진 일정은 개월 단위라 커브에서 직접 계산한다."""
+    today, cal = cv.qdate(m.as_of), cv.CALENDARS[ccy]
+    eff = cal.advance(today, 2, ql.Days)
+    end = cal.advance(eff, ql.Period("1W"), ql.ModifiedFollowing)
+    acc = (ql.Actual360() if dc == "ACT/360" else cv.DC365).yearFraction(eff, end)
+    c = m.local[ccy]
+    return (c.df(_t(m, eff)) / c.df(_t(m, end)) - 1) / acc * 100
+
+
+def krw_cd_par(m):
+    """CD 91일: T+1 시작 3개월 예금 단리 (ACT/365F)."""
+    today, cal = cv.qdate(m.as_of), cv.CALENDARS["KRW"]
+    s = cal.advance(today, 1, ql.Days)
+    e = cal.advance(s, ql.Period(3, ql.Months), ql.ModifiedFollowing)
+    c = m.proj["KRW"]
+    return (c.df(_t(m, s)) / c.df(_t(m, e)) - 1) / cv.DC365.yearFraction(s, e) * 100
+
+
+def fx_outright_1w(m, ccy):
+    """1주 선도환율 (호가 단위: USDKRW, USDJPY). 결제일(T+2)에서 1주 뒤, 두 통화 공통 영업일."""
+    today = cv.qdate(m.as_of)
+    other = "KRW" if ccy == "USD" else "JPY"
+    cal = cv.calendar(["USD", other])
+    t = _t(m, cal.advance(cal.advance(today, 2, ql.Days), ql.Period("1W"), ql.ModifiedFollowing))
+    return float(m.fwd_fx("USD", t) if ccy == "USD" else m.fwd_fx("USD", t) / m.fwd_fx("JPY", t))
+
+
 def check(m=None, verbose=True) -> list[str]:
     m = m or load()
     q = m.quotes
@@ -71,17 +108,14 @@ def check(m=None, verbose=True) -> list[str]:
             fails.append(f"{name} {label}: {diff:+.4f}{unit}")
 
     for label, v in q["usd_ois"].items():
-        if label.endswith("W"):
-            continue
-        add("USD OIS", label, ois_par(m, "USD", label, 1, "ACT/360"), v, TOL_BP / 100, "%")
+        model = ois_par_1w(m, "USD", "ACT/360") if label == "1W" else ois_par(m, "USD", label, 1, "ACT/360")
+        add("USD OIS", label, model, v, TOL_BP / 100, "%")
     for label, v in q["jpy_ois"].items():
-        if label.endswith("W"):
-            continue
-        add("JPY OIS", label, ois_par(m, "JPY", label, 1, "ACT/365"), v, TOL_BP / 100, "%")
+        model = ois_par_1w(m, "JPY", "ACT/365") if label == "1W" else ois_par(m, "JPY", label, 1, "ACT/365")
+        add("JPY OIS", label, model, v, TOL_BP / 100, "%")
     for label, v in q["krw_irs"].items():
-        if label in ("CD",):
-            continue
-        add("KRW IRS", label, ois_par(m, "KRW", label, 4, "ACT/365"), v, TOL_BP / 100, "%")
+        model = krw_cd_par(m) if label == "CD" else ois_par(m, "KRW", label, 4, "ACT/365")
+        add("KRW IRS", label, model, v, TOL_BP / 100, "%")
     for label, v in q["krw_ccs"].items():
         if _months(label) <= 1:          # 1년 이하는 스왑포인트로 부트스트랩
             continue
@@ -93,9 +127,8 @@ def check(m=None, verbose=True) -> list[str]:
     spot = q["spot"]
     for ccy, s0 in (("USD", spot["USD"]), ("JPY", spot["USDJPY"])):
         for label, pts in q[f"fx_pts_{ccy}"].items():
-            if label.endswith("W"):
-                continue
-            add(f"FX {ccy}", label, fx_outright(m, ccy, label), s0 + pts, TOL_FX, "")
+            model = fx_outright_1w(m, ccy) if label == "1W" else fx_outright(m, ccy, label)
+            add(f"FX {ccy}", label, model, s0 + pts, TOL_FX, "")
     if verbose:
         print(f"{'상품':<14}{'만기':>5}{'화면':>12}{'엔진 Par':>12}{'차이':>10}")
         print("\n".join(rows))
