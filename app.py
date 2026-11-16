@@ -739,9 +739,30 @@ def validate() -> list[str]:
     return sorted(set(errs))
 
 
+def size_warnings(trades: list, fee_bp_in: float) -> list[str]:
+    """이상한 크기의 입력(단위를 틀렸을 가능성)에 대한 경고 문장. 문턱은 정상 입력이 걸리지 않게 넉넉히 잡았다."""
+    out = []
+    big = {"KRW": 30_000e8, "USD": 2_000e6, "JPY": 3_000e8}   # 원화 3조, 2십억 달러, 3천억 엔
+    for tr in trades:
+        for l in tr.legs:
+            if l.notional > big[l.ccy]:
+                out.append(f"{l.ccy} 명목이 {money_ko(l.notional, l.ccy)}으로 매우 큽니다. "
+                           f"칸의 단위({UNIT[l.ccy][1]})가 맞는지 확인하고, 아니면 값을 고치세요.")
+            if tr.product != "FXFWD" and l.kind == "fixed" and l.rate != 0 and not 0.0005 <= l.rate <= 0.15:
+                out.append(f"{l.ccy} 고정금리가 {l.rate * 100:.4f}%입니다. 금리 칸은 % 단위입니다 "
+                           "(4.03% = 4.03). 소수(0.0403)나 bp로 넣지 않았는지 확인하세요.")
+    if fee_bp_in > 100:
+        out.append(f"라인피가 연 {fee_bp_in:,.0f}bp ({fee_bp_in / 100:.1f}%)입니다. 라인피 칸은 bp 단위입니다 "
+                   "(0.1% = 10). 맞는 값이면 그대로 계산해도 됩니다.")
+    return list(dict.fromkeys(out))
+
+
 # 시장가 대비 차이 (라인피 전). 딜러 라인·CCP는 고객 거래가 라인피만큼만 오프마켓이라는 전제
 QU = fx_quote_unit(client_trade) if is_fx else 1
 GAP_UNIT = ("원/100엔" if QU == 100 else "원/외화 1단위") if is_fx else "bp"
+for _w in size_warnings([client_trade] + ([hedge_trade] if hedge_trade else []),
+                        fee_in if (hedge_kind != "direct" and not is_fx and fee_loc != "upfront") else 0.0):
+    st.warning(_w)
 if not validate():
     gap = market_gap(client_trade, m) * (QU if is_fx else 1e4)
     gap_txt_now = f"{gap:+,.2f}{'원' if is_fx else 'bp'}"
