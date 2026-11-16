@@ -12,9 +12,10 @@ from pathlib import Path
 from ui_eval import backend as bk
 from ui_eval.contract import ADMIN_KEY_PREFIX, EVAL_ADMIN_PASSWORD, ROOT
 
-# 은행 파라미터, 시뮬레이션, 시장 데이터 받기, 마스터 편집 위젯의 라벨 조각 (일반 사용자 화면에 입력 위젯으로 있으면 안 된다)
+# 은행 파라미터, 시뮬레이션, 마스터 편집 위젯의 라벨 조각 (일반 사용자 화면에 입력 위젯으로 있으면 안 된다)
+# 시장 데이터 새로 받기(블룸버그)는 일반 사용자도 한다 (사용자 결정 2026-11-16, DECISIONS O5)
 FORBIDDEN_LABELS = ["CET1 목표비율", "세후 요구수익률", "세율", "FTP", "KVA 조달", "한계계수", "IM 조달", "경로 수", "변동성 배수",
-                    "평균회귀", "블룸버그", "신용 위험가중치", "연 PD", "LGD", "BA-CVA 업종"]
+                    "평균회귀", "신용 위험가중치", "연 PD", "LGD", "BA-CVA 업종"]
 _WIDGETS = bk.INPUT_KINDS + ("button",)
 
 

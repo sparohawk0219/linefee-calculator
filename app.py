@@ -458,16 +458,18 @@ with st.sidebar:
                    + ("" if m.short_end else " · 1년 미만 상품 없음 (1년물부터 부트스트랩)"))
         if m.missing:
             st.warning(f"스냅샷에서 값을 받지 못한 티커 {len(m.missing)}개: {', '.join(m.missing)}")
-        if st.button("블룸버그에서 새로 받기", key="adm_fetch"):
-            with st.spinner("블룸버그 조회 중 (현재값 + 과거 5년)"):
-                try:
-                    fetch()
-                    get_market.clear()
-                    st.success(f"저장: {SNAPSHOT.name}")
-                except Exception as e:  # 블룸버그 미접속 등
-                    st.error(f"실패: {e}")
     else:
         st.caption(f"시장 기준: {ss['market_src']} · 기준일 {m.as_of}")
+    # 시장 데이터 새로 받기는 일반 사용자도 한다 (거래 때마다 최신 시장으로 계산). 기준 선택은 관리자만
+    if st.button("블룸버그에서 새로 받기", key="fetch",
+                 help="블룸버그 단말이 연결된 PC에서만 된다. 받은 뒤에는 계산을 다시 눌러야 새 시장으로 계산된다"):
+        with st.spinner("블룸버그 조회 중 (현재값 + 과거 5년)"):
+            try:
+                fetch()
+                get_market.clear()
+                st.success(f"저장: {SNAPSHOT.name}")
+            except Exception as e:  # 블룸버그 미접속 등
+                st.error(f"실패: {e}")
 
     draft_params = None   # 관리자가 고치는 중인 은행 파라미터 (저장하기 전에는 계산에 쓰이지 않는다)
     if admin:
