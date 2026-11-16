@@ -1,4 +1,4 @@
-﻿"""회귀 테스트: 엔/원 30년 CCS 중개(LH 4.13% / 노무라 4.03%, 연 10bp)를 새 엔진으로 재현한다.
+﻿"""회귀 테스트: 엔/원 30년 CCS 중개(공공기관 A 4.13% / 딜러 B 4.03%, 연 10bp)를 새 엔진으로 재현한다.
 
 기존 모델(xva_model.py, 2026-11-11 스냅샷) 결과와 나란히 출력한다.
     python -m tests.regression_jpykrw
@@ -25,9 +25,9 @@ def jpykrw_deal(m, fee_location="client"):
         Leg("KRW", krw_notional, "receive", rate=0.0403, day_count="ACT/360"),
         Leg("JPY", 1e10, "pay", rate=0.0407),
     ], maturity=30)
-    lh = Counterparty("LH", credit_rw=0.0, cva_rw=0.01, csa=CSA())
-    nomura = Counterparty("노무라", credit_rw=0.50, cva_rw=0.05, csa=CSA(vm=True, im=True))
-    return build_deal(client, lh, nomura, fee_location=fee_location, fee=10.0)
+    client_a = Counterparty("공공기관 A", credit_rw=0.0, cva_rw=0.01, csa=CSA())
+    dealer_b = Counterparty("딜러 B", credit_rw=0.50, cva_rw=0.05, csa=CSA(vm=True, im=True))
+    return build_deal(client, client_a, dealer_b, fee_location=fee_location, fee=10.0)
 
 
 def main():
@@ -52,7 +52,7 @@ def main():
     print(f"  비용 합계 {old.total * n:6.1f}억, 수수료 {old.fee_income * n:.1f}억, 순마진 {old.net_margin * n:6.2f}억")
 
     rb = run(jpykrw_deal(m, "hedge"), m, p)
-    print(f"구조 B(수수료 노무라 다리): 순마진 {rb.net / OKU:.2f}억, 허들 {hurdle_txt(rb)} "
+    print(f"구조 B(수수료 딜러 B 다리): 순마진 {rb.net / OKU:.2f}억, 허들 {hurdle_txt(rb)} "
           f"(기존 +0.5억, 11.5%)")
 
 

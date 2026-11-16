@@ -64,7 +64,7 @@ PRODUCTS = {"CCS": "통화스왑", "FXFWD": "FX 선도", "KRWIRS": "원화 IRS",
 IRS_CONV = {"KRWIRS": ("KRW", 4, "ACT/365", "CD 91일"), "USDOIS": ("USD", 1, "ACT/360", "SOFR 후취 복리")}
 FLOAT_INDEX = {"USD": "SOFR", "JPY": "TONA", "KRW": "CD 91일"}
 IRS_DIRS = ["은행 고정 수취 (고객 고정 지급)", "은행 고정 지급 (고객 고정 수취)"]
-PRESETS = ["엔/원 30년 CCS (LH 중개)", "USD/KRW 5년 CCS (기업)", "USD/KRW 1년 FX 선도 (기업)",
+PRESETS = ["엔/원 30년 CCS (공공기관 A 중개)", "USD/KRW 5년 CCS (기업)", "USD/KRW 1년 FX 선도 (기업)",
            "원화 IRS 5년 (기업, 고정 지급)", "달러 OIS 3년 (기업, 고정 지급)"]
 
 
@@ -117,12 +117,12 @@ def load_preset():
     name = ss["preset"]
     m = get_market(MARKETS[ss["market_src"]])
     ss["upfront_oku"] = 0.0
-    if name == "엔/원 30년 CCS (LH 중개)":
+    if name == "엔/원 30년 CCS (공공기관 A 중개)":
         ss["product"], ss["mat"] = "CCS", 30.0
         _set_leg("cr_", "KRW", 100 * m.spot_quote["JPY"], rate=4.03, dc="ACT/360")
         _set_leg("cp_", "JPY", 100, rate=4.07)
-        _set_cp("cl_", "LH", 0.0, "지방정부·정부보증 비금융·공공기관", "투자등급", 0.0, "없음 (무담보)")
-        _set_cp("dl_", "노무라", 50.0, "금융기관(정부보증 금융 포함)", "투자등급", 0.0, "VM + IM")
+        _set_cp("cl_", "공공기관 A", 0.0, "지방정부·정부보증 비금융·공공기관", "투자등급", 0.0, "없음 (무담보)")
+        _set_cp("dl_", "딜러 B", 50.0, "금융기관(정부보증 금융 포함)", "투자등급", 0.0, "VM + IM")
         ss["h_mode"], ss["fee_loc"], ss["fee_bp"] = BTB, "고객 다리 running", 10.0
     elif name == "USD/KRW 5년 CCS (기업)" and "USD" in m.spot:
         ss["product"], ss["mat"] = "CCS", 5.0
@@ -251,7 +251,7 @@ def mirror_to_hedge():
 if "initialized" not in st.session_state:
     st.session_state["initialized"] = True
     st.session_state["market_src"] = list(MARKETS)[0]
-    st.session_state["preset"] = "엔/원 30년 CCS (LH 중개)"
+    st.session_state["preset"] = "엔/원 30년 CCS (공공기관 A 중개)"
     load_preset()
 for _k, _v in {"ccp_name": "CCP (KRX·LCH)", "ccp_rw": 2.0, "irs_amt": 1000.0, "irs_dir": IRS_DIRS[0],
                "irs_rate": 0.0, "irs_spread": 0.0, "fee_bp": 10.0, "fee_fx": 1.0}.items():

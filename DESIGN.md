@@ -185,7 +185,7 @@ h     = 세후 허들 / (1 − 세율)
 
 **엔/원 검토 모델과 v1.**
 - E/L은 0이다(공공기관 PD 0).
-- FVA는 대칭 FTP, 노무라 VM 기준이다.
+- FVA는 대칭 FTP, 딜러 B VM 기준이다.
 - MVA는 0이다(조달 스프레드 0).
 - KVA는 확정 방식이다.
 - 레버리지·유동성은 구현하지 않았다.
@@ -380,11 +380,11 @@ trade:
   maturity: 2056-11-13
   calendars: [Seoul, Tokyo, NewYork]
 counterparty:
-  name: Nomura
+  name: Dealer B
   sector: bank_equivalent_securities      # 신용 RW 표 키
   cva_rw_sector: financial_ig             # BA-CVA RW 표 키
   pd_curve: internal_A                    # E/L
-  netting_set: NOMURA-ISDA-1
+  netting_set: DEALER-B-ISDA-1
 csa:
   vm: {currency: USD, rate: SOFR, threshold: 0, mta: 500_000, mpor_days: 10}
   im: {model: SIMM, exchanged: true, threshold_eur: 50_000_000}

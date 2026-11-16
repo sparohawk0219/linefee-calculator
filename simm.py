@@ -1,7 +1,7 @@
-"""ISDA SIMM으로 노무라와의 IM 계산 (RatesFX 상품군, delta만).
+"""ISDA SIMM으로 딜러 B와의 IM 계산 (RatesFX 상품군, delta만).
 
 고정-고정 CCS라서 vega와 curvature는 없다. 금리 delta, 통화간 베이시스, FX delta만 있다.
-이 거래 하나만 넣은 단독 계산이고, 노무라와의 기존 거래와의 상계는 반영하지 않는다.
+이 거래 하나만 넣은 단독 계산이고, 딜러 B와의 기존 거래와의 상계는 반영하지 않는다.
 
 파라미터 출처: ISDA SIMM Methodology
     v2.8+2512 (2026-07-11 시행, 현재 적용)
@@ -102,7 +102,7 @@ def _currency_margin(s: np.ndarray, rw: np.ndarray, p: dict) -> tuple[float, flo
 
 def simm(t: float, market, c_jpy: float, c_krw: float, maturity: int, fx: float,
          version: str = "2.8+2512", calc_ccy: str = "USD", principal: bool = False) -> dict:
-    """t 시점 IM (원화 명목 1 기준). 귀사는 노무라로부터 JPY를 받고 KRW를 준다.
+    """t 시점 IM (원화 명목 1 기준). 귀사는 딜러 B로부터 JPY를 받고 KRW를 준다.
 
     fx: t 시점 JPYKRW / 현재 JPYKRW (JPY 다리를 원화로 바꾸는 배수)
     principal: False면 원금 교환분 제외 (비청산 장외파생 증거금 기준상 통화스왑 원금 교환은 IM 대상 아님)

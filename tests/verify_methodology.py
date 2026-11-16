@@ -1,7 +1,7 @@
 """docs/METHODOLOGY_v1.md 13장 검증 수치를 다시 만든다.
 
     python -m tests.verify_methodology          # 전부 (수 분)
-    python -m tests.verify_methodology lh irs   # 일부만: lh, equiv, hedge, mc, irs, martingale, grid
+    python -m tests.verify_methodology client_a irs   # 일부만: client_a, equiv, hedge, mc, irs, martingale, grid
 """
 import sys
 import time
@@ -27,9 +27,9 @@ def seeds(f, n=8):
     return vals.mean(), vals.std(ddof=1)
 
 
-def lh():
+def client_a():
     m = load_legacy()
-    print("== 13.1 엔/원 30년 LH 건 (2026-11-11 스냅샷, 20,000경로)")
+    print("== 13.1 엔/원 30년 공공기관 A 건 (2026-11-11 스냅샷, 20,000경로)")
     p = BankParams(n_paths=20000)
     r = run(jpykrw_deal(m), m, p)
     for k, v in r.costs.items():
@@ -44,7 +44,7 @@ def lh():
         print(f"  {label}: KVA {rr.kva / OKU:.2f}, 순마진 {rr.net / OKU:.2f}, 허들 {hurdle_txt(rr)}")
     rb = run(jpykrw_deal(m, "hedge"), m, p)
     w, h = rb.worst_net()
-    print(f"  구조 B (노무라 다리 차감): 순마진 {rb.net / OKU:.2f}, 허들 {hurdle_txt(rb)}, "
+    print(f"  구조 B (딜러 B 다리 차감): 순마진 {rb.net / OKU:.2f}, 허들 {hurdle_txt(rb)}, "
           f"0~50% 최저 {w / OKU:.2f} (h {h:.1%})")
     be = breakeven(jpykrw_deal(m), m, p, base=r)
     print(f"  손익분기: 고객 다리 {10 + be.extra_bp_pa:.2f}bp ± {be.extra_se * 1e4:.2f} (수렴 {be.converged})")
@@ -88,7 +88,7 @@ def hedge():
 
 def mc():
     m = load_legacy()
-    print("== 13.4 몬테카를로 표준오차 (엔/원 LH 건, 순마진 억원)")
+    print("== 13.4 몬테카를로 표준오차 (엔/원 공공기관 A 건, 순마진 억원)")
     for n in (5000, 20000):
         p = BankParams(n_paths=n)
         mu, sd = seeds(lambda s: run(jpykrw_deal(m), m, replace(p, seed=s)).net / OKU)
@@ -176,7 +176,7 @@ def ccp_im_check():
 
 
 def fva_check():
-    print("== 13.6b 해석적 FVA - 시뮬레이션 E[B] 기준 FVA (엔/원 LH 건, 20,000경로, seed 1~6)")
+    print("== 13.6b 해석적 FVA - 시뮬레이션 E[B] 기준 FVA (엔/원 공공기관 A 건, 20,000경로, seed 1~6)")
     for name, mk in (("2026-11-11", load_legacy), ("2026-11-12", load)):
         m = mk()
         d = jpykrw_deal(m)
@@ -193,7 +193,7 @@ def fva_check():
               f"seed 간 표준편차 {diffs.std(ddof=1):.4f}")
 
 
-TASKS = {"lh": lh, "equiv": equiv, "hedge": hedge, "mc": mc, "irs": irs, "martingale": martingale, "fva": fva_check, "grid": grid}
+TASKS = {"client_a": client_a, "equiv": equiv, "hedge": hedge, "mc": mc, "irs": irs, "martingale": martingale, "fva": fva_check, "grid": grid}
 
 if __name__ == "__main__":
     for k in sys.argv[1:] or TASKS:

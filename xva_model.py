@@ -1,9 +1,9 @@
 """30년 JPY/KRW 고정-고정 CCS 백투백 중개의 라인 피(XVA) 계산.
 
 구조
-    HF  <-- (귀사: KRW 수취, JPY 지급) -->  귀사  <-- (반대) -->  노무라
+    HF  <-- (귀사: KRW 수취, JPY 지급) -->  귀사  <-- (반대) -->  딜러 B
     - HF: CSA 없음, break 없음, 자본 부과 없음, 귀사가 받는 수수료 없음
-    - 노무라: CSA 있음(threshold 0, 정산 지연 없음), 30년 bullet 또는 10년 mutual break,
+    - 딜러 B: CSA 있음(threshold 0, 정산 지연 없음), 30년 bullet 또는 10년 mutual break,
               귀사에 upfront 지급 (이 거래의 수익원)
 
 모든 금액은 '원화 명목 1' 기준 비율로 계산하고, 마지막에 명목금액을 곱한다.
@@ -42,7 +42,7 @@ def coupons(a: Assumptions) -> tuple[float, float]:
         c_krw = m.krw.par_rate(a.maturity_years)
     else:
         c_krw = a.coupon_krw * (365.25 / 360 if a.krw_day_count == "ACT/360" else 1.0)
-    if a.fee_structure == "running_nomura":   # 수수료를 노무라 다리에서 뺀다
+    if a.fee_structure == "running_dealer_b":   # 수수료를 딜러 B 다리에서 뺀다
         c_krw -= _spread_annual(a)
     return c_jpy, c_krw
 
@@ -52,9 +52,9 @@ def _spread_annual(a: Assumptions) -> float:
 
 
 def hf_coupon_krw(a: Assumptions) -> float:
-    """LH가 귀사에 내는 원화 쿠폰 (연 지급액) = 노무라 쿠폰 + 수수료 (running 계열)."""
+    """공공기관 A가 귀사에 내는 원화 쿠폰 (연 지급액) = 딜러 B 쿠폰 + 수수료 (running 계열)."""
     c_krw = coupons(a)[1]
-    if a.fee_structure not in ("running", "running_nomura"):
+    if a.fee_structure not in ("running", "running_dealer_b"):
         return c_krw
     return c_krw + _spread_annual(a)
 
@@ -80,11 +80,11 @@ class Exposure:
     value_vs_hf: np.ndarray  # (경로 x 시점) 귀사 입장에서 본 HF 거래의 가치
     epe_hf: np.ndarray       # HF가 귀사에 갚을 돈의 기대값 (익스포저)
     ene_hf: np.ndarray       # 귀사가 HF에 갚을 돈의 기대값 (음수)
-    vm_posted: np.ndarray    # 귀사가 노무라에 낼 VM 기대값 (노무라 거래 기준)
-    vm_received: np.ndarray  # 노무라에서 받을 VM 기대값 (양수)
+    vm_posted: np.ndarray    # 귀사가 딜러 B에 낼 VM 기대값 (딜러 B 거래 기준)
+    vm_received: np.ndarray  # 딜러 B에서 받을 VM 기대값 (양수)
     fwd_fx: np.ndarray       # 선도환율 / 현물환율
     pfe_hf: dict = field(default_factory=dict)  # {신뢰수준: 시점별 PFE}
-    epe_nomura: np.ndarray = None  # CSA 하에서 노무라에 남는 익스포저
+    epe_dealer_b: np.ndarray = None  # CSA 하에서 딜러 B에 남는 익스포저
 
 
 def rate_params(a: Assumptions) -> tuple[float, float, np.ndarray]:
@@ -164,7 +164,7 @@ def simulate_exposure(a: Assumptions) -> Exposure:
     krw_leg = np.column_stack([
         _leg_pv_paths(t, a.market.krw, c_krw_hf, a.maturity_years, x_k[:, i], var_k[i], kappa)
         for i, t in enumerate(times)])
-    krw_leg_nomura = krw_leg if c_krw_hf == c_krw else np.column_stack([
+    krw_leg_dealer_b = krw_leg if c_krw_hf == c_krw else np.column_stack([
         _leg_pv_paths(t, a.market.krw, c_krw, a.maturity_years, x_k[:, i], var_k[i], kappa)
         for i, t in enumerate(times)])
     jpy_leg = np.column_stack([
@@ -175,25 +175,25 @@ def simulate_exposure(a: Assumptions) -> Exposure:
     sign = -1.0 if a.hf_reverse else 1.0
     value_vs_hf = sign * (krw_leg - fx * jpy_leg)
     positive = np.maximum(value_vs_hf, 0)
-    # 노무라 거래는 공사 거래의 반대이고 원화 쿠폰만 수수료만큼 낮다. 노무라 시가가 양수면 귀사가 VM을 낸다
-    nomura_mtm = sign * (krw_leg_nomura - fx * jpy_leg)
+    # 딜러 B 거래는 공사 거래의 반대이고 원화 쿠폰만 수수료만큼 낮다. 딜러 B 시가가 양수면 귀사가 VM을 낸다
+    dealer_b_mtm = sign * (krw_leg_dealer_b - fx * jpy_leg)
 
-    # 노무라와는 정반대 거래이고 CSA로 MTM만큼 담보가 오가므로,
+    # 딜러 B와는 정반대 거래이고 CSA로 MTM만큼 담보가 오가므로,
     # 남는 익스포저는 정산 지연 기간 동안의 변동분뿐이다. 지연이 0이면 0.
     lag_years = a.settlement_lag_days / 250
     jpy_leg_in_krw = (fx * jpy_leg).mean(axis=0)
-    epe_nomura = NORMAL_PDF_AT_0 * a.market.fx_vol(1.0) * np.sqrt(lag_years) * jpy_leg_in_krw
+    epe_dealer_b = NORMAL_PDF_AT_0 * a.market.fx_vol(1.0) * np.sqrt(lag_years) * jpy_leg_in_krw
 
     return Exposure(
         times=times,
         value_vs_hf=value_vs_hf,
         epe_hf=positive.mean(axis=0),
         ene_hf=np.minimum(value_vs_hf, 0).mean(axis=0),
-        vm_posted=np.maximum(nomura_mtm, 0).mean(axis=0),
-        vm_received=np.maximum(-nomura_mtm, 0).mean(axis=0),
+        vm_posted=np.maximum(dealer_b_mtm, 0).mean(axis=0),
+        vm_received=np.maximum(-dealer_b_mtm, 0).mean(axis=0),
         fwd_fx=fwd,
         pfe_hf={q: np.quantile(positive, q, axis=0) for q in a.pfe_quantiles},
-        epe_nomura=epe_nomura,
+        epe_dealer_b=epe_dealer_b,
     )
 
 
@@ -214,11 +214,11 @@ def cva(a: Assumptions, times: np.ndarray, epe: np.ndarray, cds: float) -> float
 
 
 def funding_cost(a: Assumptions, ex: Exposure) -> tuple[float, float]:
-    """(FCA, FBA). 노무라 CSA 담보는 USD 현금.
+    """(FCA, FBA). 딜러 B CSA 담보는 USD 현금.
 
-    HF가 귀사에 빚진 상태(EPE_hf)면 귀사는 노무라에 같은 금액을 USD 현금으로 내야 하는데
+    HF가 귀사에 빚진 상태(EPE_hf)면 귀사는 딜러 B에 같은 금액을 USD 현금으로 내야 하는데
     HF에서는 담보를 받지 못하므로 그만큼 USD를 조달해야 한다 → FCA.
-    반대로 노무라에서 받은 USD 현금으로 다른 USD 조달을 대체하면 이익이 생긴다 → FBA.
+    반대로 딜러 B에서 받은 USD 현금으로 다른 USD 조달을 대체하면 이익이 생긴다 → FBA.
     """
     t = ex.times[1:]
     df = discount(a, t)
@@ -269,13 +269,13 @@ def effective_maturity(t: float, a: Assumptions) -> float:
 @dataclass
 class CapitalProfile:
     ead_hf: np.ndarray
-    ead_nomura: np.ndarray
+    ead_dealer_b: np.ndarray
     m_eff: np.ndarray
     k_ccr_hf: np.ndarray
-    k_ccr_nomura: np.ndarray
+    k_ccr_dealer_b: np.ndarray
     k_cva_hf: np.ndarray
-    k_cva_nomura: np.ndarray
-    im: np.ndarray           # 노무라 IM (SIMM, 양방향 같은 금액)
+    k_cva_dealer_b: np.ndarray
+    im: np.ndarray           # 딜러 B IM (SIMM, 양방향 같은 금액)
     multiplier: np.ndarray   # SA-CCR PFE 승수 (받은 IM 반영)
 
 
@@ -297,10 +297,10 @@ def capital_profile(a: Assumptions, ex: Exposure) -> CapitalProfile:
 
     # HF: 무담보 → maturity factor 1, RC는 경로별 max(V,0)의 기대값(EPE)으로 근사
     ead_hf = 1.4 * (ex.epe_hf + addon)
-    # 노무라: 증거금부 → maturity factor 1.5 x sqrt(MPOR/250). 실제 정산 지연이 없어도
+    # 딜러 B: 증거금부 → maturity factor 1.5 x sqrt(MPOR/250). 실제 정산 지연이 없어도
     # 규제상 MPOR 하한(10영업일)이 적용된다.
     # 266.다: RC = max(V - C, TH + MTA - NICA, 0). VM이 V를 덮고 TH = 0이므로 RC = 0.
-    # NICA = 노무라가 낸 분리보관 IM (귀사가 낸 IM은 분리보관이라 차감하지 않음, 266.다.(2))
+    # NICA = 딜러 B가 낸 분리보관 IM (귀사가 낸 IM은 분리보관이라 차감하지 않음, 266.다.(2))
     # 267.가: 승수 = min(1, 5% + 95% x exp((V - C) / (2 x 95% x add-on))), V - C = -NICA
     margined_mf = 1.5 * np.sqrt(a.regulatory_mpor_days / 250)
     addon_margined = margined_mf * addon
@@ -308,7 +308,7 @@ def capital_profile(a: Assumptions, ex: Exposure) -> CapitalProfile:
     nica = im * (1 - a.im_haircut)
     multiplier = np.minimum(1.0, 0.05 + 0.95 * np.exp(
         -nica / np.maximum(2 * 0.95 * addon_margined, 1e-12)))
-    ead_nomura = 1.4 * multiplier * addon_margined
+    ead_dealer_b = 1.4 * multiplier * addon_margined
 
     # BA-CVA (reduced version, 헤지 없음), CRE50:
     #   SCVA_c = (1/alpha) x RW_c x M x EAD x DF,  DF = (1 - e^{-0.05M}) / (0.05M)
@@ -325,27 +325,27 @@ def capital_profile(a: Assumptions, ex: Exposure) -> CapitalProfile:
         return a.ba_cva_ds * scva * to_target
 
     k_ccr_hf = ead_hf * a.rw_hf * a.capital_ratio
-    k_ccr_nomura = ead_nomura * a.rw_nomura * a.capital_ratio
+    k_ccr_dealer_b = ead_dealer_b * a.rw_dealer_b * a.capital_ratio
 
     if a.cva_capital_method == "ccr_proxy":
-        k_cva_nomura = k_ccr_nomura.copy()
+        k_cva_dealer_b = k_ccr_dealer_b.copy()
         k_cva_hf = k_ccr_hf.copy() if a.hf_cva_capital else np.zeros_like(ead_hf)
     elif a.cva_capital_method == "ccr_ratio":
-        k_cva_nomura = k_ccr_nomura * a.cva_to_ccr_rwa_ratio
+        k_cva_dealer_b = k_ccr_dealer_b * a.cva_to_ccr_rwa_ratio
         k_cva_hf = k_ccr_hf * a.cva_to_ccr_rwa_ratio if a.hf_cva_capital else np.zeros_like(ead_hf)
     else:
-        k_cva_nomura = ba_cva(a.ba_cva_rw_nomura, ead_nomura) * a.ba_cva_marginal_factor
+        k_cva_dealer_b = ba_cva(a.ba_cva_rw_dealer_b, ead_dealer_b) * a.ba_cva_marginal_factor
         k_cva_hf = (ba_cva(a.ba_cva_rw_hf, ead_hf) * a.ba_cva_marginal_factor
                     if a.hf_cva_capital else np.zeros_like(ead_hf))
 
     return CapitalProfile(
         ead_hf=ead_hf,
-        ead_nomura=ead_nomura,
+        ead_dealer_b=ead_dealer_b,
         m_eff=m,
         k_ccr_hf=k_ccr_hf,
-        k_ccr_nomura=k_ccr_nomura,
+        k_ccr_dealer_b=k_ccr_dealer_b,
         k_cva_hf=k_cva_hf,
-        k_cva_nomura=k_cva_nomura,
+        k_cva_dealer_b=k_cva_dealer_b,
         im=im,
         multiplier=multiplier,
     )
@@ -404,20 +404,20 @@ def annuity(a: Assumptions, start: int, end: int) -> float:
 def fee_income(a: Assumptions) -> float:
     """귀사 수수료 수입의 현재가치 (명목 대비).
 
-    running: LH 원화 쿠폰 가산분(연 10bp, ACT/360)을 30년간 받는다.
-    upfront: 노무라가 upfront를 지급. bullet 금액이 확정돼 있으면 그 값, break 구조는 연 bp 차이만큼 뺀다.
+    running: 공공기관 A 원화 쿠폰 가산분(연 10bp, ACT/360)을 30년간 받는다.
+    upfront: 딜러 B가 upfront를 지급. bullet 금액이 확정돼 있으면 그 값, break 구조는 연 bp 차이만큼 뺀다.
     """
     ann = annuity(a, 0, a.maturity_years)
-    if a.fee_structure in ("running", "running_nomura"):
-        # LH 쿠폰과 노무라 쿠폰 차이의 현재가치
+    if a.fee_structure in ("running", "running_dealer_b"):
+        # 공공기관 A 쿠폰과 딜러 B 쿠폰 차이의 현재가치
         return (hf_coupon_krw(a) - coupons(a)[1]) * ann
-    if a.nomura_upfront_bullet_bp is not None:
-        bullet = a.nomura_upfront_bullet_bp / 1e4
+    if a.dealer_b_upfront_bullet_bp is not None:
+        bullet = a.dealer_b_upfront_bullet_bp / 1e4
     else:
-        bullet = a.nomura_fee_bullet_bp_pa / 1e4 * ann
-    if a.nomura_structure != "break":
+        bullet = a.dealer_b_fee_bullet_bp_pa / 1e4 * ann
+    if a.dealer_b_structure != "break":
         return bullet
-    return bullet - (a.nomura_fee_bullet_bp_pa - a.nomura_fee_break_bp_pa) / 1e4 * ann
+    return bullet - (a.dealer_b_fee_bullet_bp_pa - a.dealer_b_fee_break_bp_pa) / 1e4 * ann
 
 
 def to_running_at_break(a: Assumptions, upfront_today: float) -> float:
@@ -426,8 +426,8 @@ def to_running_at_break(a: Assumptions, upfront_today: float) -> float:
 
 
 def implied_tail_value_bp(a: Assumptions) -> float:
-    """노무라가 10~30년 구간에 추가로 내는 값 (bullet - break upfront), break 시점 기준 연 bp."""
-    gap = (a.nomura_fee_bullet_bp_pa - a.nomura_fee_break_bp_pa) / 1e4 * annuity(a, 0, a.maturity_years)
+    """딜러 B가 10~30년 구간에 추가로 내는 값 (bullet - break upfront), break 시점 기준 연 bp."""
+    gap = (a.dealer_b_fee_bullet_bp_pa - a.dealer_b_fee_break_bp_pa) / 1e4 * annuity(a, 0, a.maturity_years)
     return to_running_at_break(a, gap)
 
 
@@ -443,7 +443,7 @@ def replacement_cost_if_exercised(a: Assumptions) -> float:
 
 def break_replacement_cost(a: Assumptions) -> float:
     """break 구조일 때 기대 재헤지 비용. bullet이면 0."""
-    if a.nomura_structure != "break":
+    if a.dealer_b_structure != "break":
         return 0.0
     return a.break_exercise_prob * replacement_cost_if_exercised(a)
 
@@ -458,13 +458,13 @@ def breakeven_replacement_payment_bp(a: Assumptions) -> float:
 
 
 # ---------------------------------------------------------------------------
-# 5. 전체 합산: HF 라인 피와 노무라 헤지 비용을 나눠서 본다
+# 5. 전체 합산: HF 라인 피와 딜러 B 헤지 비용을 나눠서 본다
 # ---------------------------------------------------------------------------
 @dataclass
 class LineFeeResult:
     line_fee_items: list[tuple[str, float]]   # HF 신용 사용에 대한 대가
-    hedge_cost_items: list[tuple[str, float]]  # 노무라와 헤지하면서 생기는 비용
-    fee_income: float                          # 수수료 수입 현재가치 (running: LH 쿠폰 가산분)
+    hedge_cost_items: list[tuple[str, float]]  # 딜러 B와 헤지하면서 생기는 비용
+    fee_income: float                          # 수수료 수입 현재가치 (running: 공공기관 A 쿠폰 가산분)
     fca: float
     fba: float
     annuity_full: float
@@ -481,12 +481,12 @@ class LineFeeResult:
 
     @property
     def total(self) -> float:
-        """귀사 비용 합계 (HF 신용 + 노무라 헤지)."""
+        """귀사 비용 합계 (HF 신용 + 딜러 B 헤지)."""
         return self.line_fee + self.hedge_cost
 
     @property
     def net_margin(self) -> float:
-        """노무라 upfront - 비용 합계. 양수면 남는 거래."""
+        """딜러 B upfront - 비용 합계. 양수면 남는 거래."""
         return self.fee_income - self.total
 
     def to_running_bp(self, upfront: float) -> float:
@@ -505,10 +505,10 @@ def compute_line_fee(a: Assumptions) -> LineFeeResult:
     ]
     net_funding = fca - fba if a.recognise_fba else fca
     hedge_cost_items = [
-        ("노무라 CVA", cva(a, ex.times, ex.epe_nomura, a.cds_nomura)),
+        ("딜러 B CVA", cva(a, ex.times, ex.epe_dealer_b, a.cds_dealer_b)),
         ("담보 조달 (FVA)", net_funding),
-        ("노무라 신용위험 자본 (KVA)", kva(a, ex.times, cap.k_ccr_nomura)),
-        ("노무라 CVA 자본 (KVA)", kva(a, ex.times, cap.k_cva_nomura)),
+        ("딜러 B 신용위험 자본 (KVA)", kva(a, ex.times, cap.k_ccr_dealer_b)),
+        ("딜러 B CVA 자본 (KVA)", kva(a, ex.times, cap.k_cva_dealer_b)),
         ("IM 조달 (MVA)", mva(a, ex.times, cap.im)),
         ("Break 재헤지 비용", break_replacement_cost(a)),
     ]

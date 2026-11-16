@@ -3,7 +3,7 @@
     python market_data.py      # 블룸버그에서 새로 받기
     python market_data.py hist # 금리 변동성·상관 추정치 추가 (과거 5년 주간)
 
-커브 구성 (노무라 CSA가 USD 현금이므로 USD SOFR 담보 기준)
+커브 구성 (딜러 B CSA가 USD 현금이므로 USD SOFR 담보 기준)
     KRW 할인커브: KRW/USD 온쇼어 CCS (KRW 고정 vs SOFR) 파 금리       KRWNSQ{n} Curncy
     JPY 할인커브: JPY OIS(TONA) 파 금리 + TONA/SOFR 베이시스             JYSO{n}, JYBSS{n}Y Curncy
     SIMM용 KRW 금리 커브: KRW IRS (vs 91일 CD)                          KWSWO{n} Curncy
