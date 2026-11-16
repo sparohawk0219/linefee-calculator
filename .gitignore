@@ -12,3 +12,9 @@ market_snapshot.json
 linefee/market_snapshot.json
 # 개별 거래 검토 보고서 (로컬 전용)
 report/
+# 로컬 전용: golden 기준값, 임시 재현 스크립트 (docs/DECISIONS.md O2)
+local/
+# UI 평가 실행 기록 (행동 로그, 점수)
+ui_eval/runs/
+# 거래상대방 마스터 실데이터 (가명 샘플 data/counterparties.sample.csv 만 커밋)
+data/counterparties.csv
