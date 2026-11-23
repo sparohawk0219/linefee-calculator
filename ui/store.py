@@ -15,7 +15,8 @@ from linefee.trade import BA_CVA_RW, CSA, BankParams, Counterparty
 
 REPO_DATA = Path(__file__).resolve().parent.parent / "data"
 SAMPLE = REPO_DATA / "counterparties.sample.csv"
-MASTER_COLS = ["name", "grade", "pd_pct", "csa", "dealer_line", "credit_rw_pct", "ba_cva_sector"]
+MASTER_COLS = ["name", "grade", "pd_pct", "csa", "dealer_line", "credit_rw_pct", "ba_cva_sector", "vm_ccy"]
+VM_CCYS = ["USD", "KRW"]   # VM 담보 통화 (선택 열, 없으면 USD). FVA 조달 스프레드 선택에 쓴다
 GRADES = ["투자등급", "투기등급·무등급"]
 CSA_KINDS = ["없음", "VM", "VM+IM"]
 LGD = 0.60   # 마스터에 없는 항목: 고정
@@ -109,6 +110,9 @@ def counterparty(row: dict) -> Counterparty:
     """마스터 한 행 → Counterparty."""
     cva = BA_CVA_RW[row["ba_cva_sector"]][GRADES.index(row["grade"])]
     csa = {"없음": CSA(), "VM": CSA(vm=True), "VM+IM": CSA(vm=True, im=True)}[row["csa"].replace(" ", "")]
+    ccy = str(row.get("vm_ccy") or "").strip().upper()
+    if ccy in VM_CCYS:
+        csa = replace(csa, ccy=ccy)
     return Counterparty(row["name"], float(row["credit_rw_pct"]) / 100, cva, float(row["pd_pct"]) / 100, LGD,
                         replace(csa))
 

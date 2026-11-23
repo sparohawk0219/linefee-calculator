@@ -22,3 +22,10 @@ ui_eval/runs/
 data/counterparties.csv
 # 관리자가 저장한 은행 파라미터 (로컬 전용. 없으면 엔진 기본값)
 data/bank_params.json
+
+# 실데이터 엑셀 (로컬 전용)
+/*.xlsx
+data/*.xlsx
+/*.csv
+/*.jpeg
+/*.jpg

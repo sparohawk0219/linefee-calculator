@@ -61,6 +61,7 @@ CCP_NAME, CCP_RW = "CCP (KRX·LCH)", 0.02   # 원화 IRS·달러 OIS의 헤지 �
 SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100"]   # 범주색 1~4번 (고정 순서)
 BTB, LINE, DIRECT = "BTB (헤지도 같은 오프마켓, 라인피 제외)", "딜러 라인 (Par 헤지)", "직접 입력 (BTB 헤지 조건)"
 HEDGE_MODES = {BTB: "btb", LINE: "line", DIRECT: "direct"}
+IRS_HEDGES = {"CCP": "ccp", "BTB (딜러)": "btb", "딜러 라인 (Par)": "line"}   # 원화 IRS·달러 OIS 헤지 상대
 
 
 PRODUCTS = {"CCS": "통화스왑", "FXFWD": "FX 선도", "KRWIRS": "원화 IRS", "USDOIS": "달러 OIS"}
@@ -554,7 +555,8 @@ def on_apply():
     if why:
         ss["_adm_msg"] = ("error", why)
         return
-    ss["adm_master"][row["name"]] = row
+    prev = ss["adm_master"].get(row["name"], {})
+    ss["adm_master"][row["name"]] = {**prev, **row}   # 화면에 없는 열(vm_ccy 등)은 그대로 둔다
     ss["_adm_msg"] = ("success", f"{row['name']}을(를) 마스터 초안에 반영했습니다. 저장해야 계산에 쓰입니다.")
 
 
@@ -673,7 +675,10 @@ a, b = st.columns(2)
 with a:
     client = cp_pick("cl_name", "고객", cl_names, master)
 with b:
-    if is_irs:
+    irs_hedge = st.radio("헤지 상대", list(IRS_HEDGES), key="irs_hedge", horizontal=True,
+                         help="CCP: 청산 Par 헤지. BTB: 딜러와 고객 거래와 같은 조건(비표준 일정·오프마켓 등 청산 불가 거래). "
+                              "딜러 라인: 딜러와 양자 Par 헤지") if is_irs else None
+    if is_irs and IRS_HEDGES[irs_hedge] == "ccp":
         st.markdown("**헤지: CCP**")
         st.caption(f"{CCP_NAME}. VM {IRS_CONV[product][0]} 현금 일일 정산, IM 은행 일방 납부(5영업일 99% VaR 근사), "
                    "SA-CCR MPOR 10영업일(별표3 296.사)")
@@ -687,11 +692,16 @@ with b:
         if ss.get("dl_name") not in dl_names:
             ss["dl_name"] = None
         dealer = cp_pick("dl_name", "헤지 딜러", dl_names, master)
+        if dealer is not None and dealer.csa.vm:   # VM 담보 통화는 마스터(ISDA CSA 적격담보) 기준
+            st.caption(f"VM 담보 통화: {dealer.csa.ccy} 현금 (FVA 조달 스프레드에 쓴다)")
 
 st.subheader("3. 헤지와 수수료")
 if is_irs:
-    hedge_kind = "ccp"
-    st.caption("헤지는 CCP 청산 Par 거래. 계산 시 미러 거래의 고정금리를 조정해 거래일 가치 0으로 만든다.")
+    hedge_kind = IRS_HEDGES[irs_hedge]
+    st.caption({"ccp": "헤지는 CCP 청산 Par 거래. 계산 시 미러 거래의 고정금리를 조정해 거래일 가치 0으로 만든다.",
+                "btb": "헤지는 고객 거래와 같은 조건(라인피 제외)의 딜러 양자 거래. 넘어온 오프마켓만큼 거래일에 VM 지급.",
+                "line": "헤지는 딜러와 양자 Par 거래. 계산 시 미러 거래의 고정금리를 조정해 거래일 가치 0으로 만든다."}
+               [hedge_kind])
 else:
     h_mode = st.radio("헤지 거래", list(HEDGE_MODES), key="h_mode", horizontal=True,
                       on_change=lambda: mirror_to_hedge() if st.session_state["h_mode"] == DIRECT else None,
