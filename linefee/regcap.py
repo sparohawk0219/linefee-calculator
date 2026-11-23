@@ -97,13 +97,53 @@ def capital_paths(ead: np.ndarray, cp: Counterparty, times: np.ndarray, p: BankP
     m = floor_remaining(np.maximum(end - times, 0.0))
     dfm = np.where(m > 0, (1 - np.exp(-0.05 * m)) / np.maximum(0.05 * m, 1e-12), 0.0)
     k_cva = p.ba_cva_ds * cp.cva_rw / p.ba_cva_alpha * m * dfm * ead * p.ba_cva_marginal_factor
+    rw = credit_rw_profile(cp, m)
     return {
         "ead": ead,
-        "ccr": ead * cp.credit_rw * p.capital_ratio,
+        "ccr": ead * rw * p.capital_ratio,
         "cva": k_cva * 12.5 * p.capital_ratio,
-        "rwa_ccr": ead * cp.credit_rw,
+        "rwa_ccr": ead * rw,
         "rwa_cva": k_cva * 12.5,
     }
+
+
+# ---------------------------------------------------------------------------
+# 기본내부등급법 (기업 익스포저, 별표3 120·123·124·126)
+# ---------------------------------------------------------------------------
+IRB_PD_FLOOR = 0.0005     # 123: 기업 PD 하한 0.05%
+_N = NormalDist()
+
+
+def irb_rw(pd: float, lgd: float, m, sales_eok: float | None = None):
+    """기업 익스포저 RW (소수, 12.5 x K). m은 유효만기(년, 스칼라 또는 배열), 1.06 승수 없음(2020 폐지).
+
+    R = 0.12 w + 0.24 (1 - w), w = (1 - e^(-50 PD)) / (1 - e^(-50))
+    중소기업(매출 700억 이하): R - 0.04 x (1 - (S - 7) / 63), S = 매출(10억원 단위, 70억 미만은 7)
+    K = [LGD N((G(PD) + sqrt(R) G(0.999)) / sqrt(1 - R)) - PD LGD] x (1 + (M - 2.5) b) / (1 - 1.5 b),
+    b = (0.11852 - 0.05478 ln PD)^2. PD 100%(부도)는 K = 0 (기본내부등급법은 EL_best = LGD로 봄).
+    """
+    if pd >= 1.0:
+        return np.zeros_like(np.asarray(m, dtype=float))
+    pd = max(pd, IRB_PD_FLOOR)
+    w = (1 - np.exp(-50 * pd)) / (1 - np.exp(-50))
+    r = 0.12 * w + 0.24 * (1 - w)
+    if sales_eok is not None and sales_eok <= 700:
+        s = max(sales_eok, 70) / 10
+        r -= 0.04 * (1 - (s - 7) / 63)
+    b = (0.11852 - 0.05478 * np.log(pd)) ** 2
+    cond = _N.cdf((_N.inv_cdf(pd) + np.sqrt(r) * _N.inv_cdf(0.999)) / np.sqrt(1 - r))
+    k0 = lgd * cond - pd * lgd
+    return 12.5 * k0 * (1 + (np.asarray(m, dtype=float) - 2.5) * b) / (1 - 1.5 * b)
+
+
+def credit_rw_profile(cp: Counterparty, m: np.ndarray):
+    """시점별 신용 RW. 고정 RW면 스칼라, 기본내부등급법이면 유효만기 M(t)에 따른 배열.
+
+    유효만기: 126.다(상계계약 하 장외파생) 하한 10영업일(잔존 0 노드는 RC만 남으므로 아무 값이나 무방), 126.가 상한 5년.
+    """
+    if not cp.irb:
+        return cp.credit_rw
+    return irb_rw(cp.pd, cp.irb_lgd, np.clip(np.maximum(m, MIN_HOLD), MIN_HOLD, 5.0), cp.sales_eok)
 
 
 # ---------------------------------------------------------------------------

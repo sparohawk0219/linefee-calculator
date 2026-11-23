@@ -15,8 +15,9 @@ from linefee.trade import BA_CVA_RW, CSA, BankParams, Counterparty
 
 REPO_DATA = Path(__file__).resolve().parent.parent / "data"
 SAMPLE = REPO_DATA / "counterparties.sample.csv"
-MASTER_COLS = ["name", "grade", "pd_pct", "csa", "dealer_line", "credit_rw_pct", "ba_cva_sector", "vm_ccy"]
+MASTER_COLS = ["name", "grade", "pd_pct", "csa", "dealer_line", "credit_rw_pct", "ba_cva_sector", "vm_ccy", "rw_method", "sales_eok"]
 VM_CCYS = ["USD", "KRW"]   # VM 담보 통화 (선택 열, 없으면 USD). FVA 조달 스프레드 선택에 쓴다
+RW_METHODS = ["고정", "IRB"]   # 신용 RW: 고정(credit_rw_pct) 또는 기본내부등급법(PD·매출로 계산, 선택 열, 없으면 고정)
 GRADES = ["투자등급", "투기등급·무등급"]
 CSA_KINDS = ["없음", "VM", "VM+IM"]
 LGD = 0.60   # 마스터에 없는 항목: 고정
@@ -52,6 +53,8 @@ def check_row(row: dict) -> str:
         return f"CSA는 {' / '.join(CSA_KINDS)} 중 하나"
     if row.get("ba_cva_sector") not in BA_CVA_RW:
         return "BA-CVA 업종이 목록에 없음"
+    if (row.get("rw_method") or "고정") not in RW_METHODS:
+        return f"RW 방식은 {' / '.join(RW_METHODS)} 중 하나"
     try:
         pd_, rw = float(row["pd_pct"]), float(row["credit_rw_pct"])
     except (KeyError, TypeError, ValueError):
@@ -113,8 +116,13 @@ def counterparty(row: dict) -> Counterparty:
     ccy = str(row.get("vm_ccy") or "").strip().upper()
     if ccy in VM_CCYS:
         csa = replace(csa, ccy=ccy)
+    irb = (row.get("rw_method") or "고정") == "IRB"
+    try:
+        sales = float(row.get("sales_eok")) if str(row.get("sales_eok") or "").strip() else None
+    except ValueError:
+        sales = None
     return Counterparty(row["name"], float(row["credit_rw_pct"]) / 100, cva, float(row["pd_pct"]) / 100, LGD,
-                        replace(csa))
+                        replace(csa), irb=irb, sales_eok=sales)
 
 
 # ---------------------------------------------------------------------------

@@ -102,9 +102,12 @@ class Counterparty:
     name: str
     credit_rw: float             # 신용위험 위험가중치
     cva_rw: float                # BA-CVA 위험가중치
-    pd: float = 0.0              # 연 부도율 (E/L용)
+    pd: float = 0.0              # 연 부도율 (E/L용, 기본내부등급법이면 RW에도)
     lgd: float = 0.60
     csa: CSA = field(default_factory=CSA)
+    irb: bool = False            # True면 credit_rw 대신 기본내부등급법 RW (별표3 120, PD 하한 0.05%, 감독 LGD)
+    irb_lgd: float = 0.40        # 기본내부등급법 감독 LGD: 기업 40%, 금융기관 45% (별표3 124.나)
+    sales_eok: float | None = None   # 연 매출액 (억원). 700억 이하면 중소기업 상관계수 조정 (별표3 120.나)
 
 
 @dataclass
