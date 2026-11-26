@@ -629,8 +629,11 @@ if admin:
             else:
                 try:
                     store.save_params(draft_params)
-                    store.save_master(draft)
-                    st.success("저장했습니다. 지금부터 모든 사용자의 계산에 쓰입니다.")
+                    kept = store.save_master(draft)
+                    st.success("저장했습니다. 지금부터 모든 사용자의 계산에 쓰입니다. 직전 저장본은 counterparties.csv.bak에 남겼습니다.")
+                    if kept:
+                        st.warning(f"읽지 못한 행 {kept}개는 지우지 않고 파일에 원문 그대로 남겨 두었습니다 (위 경고의 행). "
+                                   "엑셀 등으로 고친 뒤 다시 읽으세요.")
                 except OSError as e:
                     st.error(f"저장하지 못했습니다: {e}")
 

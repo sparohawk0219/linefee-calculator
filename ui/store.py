@@ -9,6 +9,7 @@ import csv
 import json
 import math
 import os
+import shutil
 from dataclasses import asdict, fields, replace
 from pathlib import Path
 
@@ -124,12 +125,33 @@ def _file_columns(path: Path) -> list:
         return []
 
 
-def save_master(rows: dict) -> None:
-    """마스터를 쓴다. MASTER_COLS 밖의 열(비고 등)은 파일 머리줄·행에 있는 것을 그대로 이어 쓴다."""
+def unread_rows(path: Path | None = None) -> list:
+    """파일에서 check_row를 통과하지 못한 행의 원문 (열 이름 -> 문자열). 마스터에 올라오지 않는 행이다."""
+    p = path or master_path()
+    out = []
+    try:
+        with open(p, encoding="utf-8-sig", newline="") as f:
+            for r in csv.DictReader(f):
+                r = {k: (v or "") for k, v in r.items() if k}
+                if check_row({k: v.strip() for k, v in r.items()} | {"csa": r.get("csa", "").replace(" ", "")}):
+                    out.append(r)
+    except OSError:
+        pass
+    return out
+
+
+def save_master(rows: dict) -> int:
+    """마스터를 쓰고, 읽지 못해 rows에 없는 행(check_row 실패)의 원문 개수를 돌려준다.
+
+    - 읽지 못한 행은 지우지 않고 원문 그대로 이어 쓴다. 같은 이름의 정상 행이 rows에 있으면(고친 것이므로) 옛 원문은 뺀다.
+    - MASTER_COLS 밖의 열(비고 등)은 파일 머리줄·행에 있는 것을 그대로 이어 쓴다.
+    - 기존 파일은 쓰기 전에 counterparties.csv.bak으로 복사해 둔다 (직전 저장본 하나).
+    """
     p = master_path()
     p.parent.mkdir(parents=True, exist_ok=True)
+    kept = [r for r in unread_rows(p) if r.get("name", "").strip() not in rows]
     extra = [c for c in _file_columns(p) if c not in MASTER_COLS]
-    for r in rows.values():
+    for r in [*rows.values(), *kept]:
         extra += [c for c in r if c and c not in MASTER_COLS and c not in extra]
     tmp = p.with_suffix(".csv.tmp")
     with open(tmp, "w", encoding="utf-8-sig", newline="") as f:
@@ -137,7 +159,12 @@ def save_master(rows: dict) -> None:
         w.writeheader()
         for r in rows.values():
             w.writerow({**r, "dealer_line": "Y" if is_dealer(r) else "N"})
+        for r in kept:
+            w.writerow(r)
+    if p.exists():
+        shutil.copy2(p, p.with_suffix(".csv.bak"))
     os.replace(tmp, p)
+    return len(kept)
 
 
 def counterparty(row: dict) -> Counterparty:

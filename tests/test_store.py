@@ -57,4 +57,20 @@ if __name__ == "__main__":
     store.save_master(rows)
     cols, out = read()
     check("note 열 유지", "note" in cols and out[0]["note"] == "메모a" and out[2]["note"] == "")
+    print("읽지 못한 행 보존·백업 (L-052)")
+    bad = row(name="오타행", credit_rw_pct="100%", note="메모오타")
+    write([row(name="a", note="메모a"), bad], store.MASTER_COLS + ["note"])
+    rows, bads, _ = store.load_master()
+    check("오타행은 읽지 못한 행", len(bads) == 1 and "오타행" not in rows)
+    rows["a2"] = row(name="a2")
+    n = store.save_master(rows)
+    cols, out = read()
+    check("저장 후에도 오타행 원문 보존", n == 1 and any(r["name"] == "오타행" and r["credit_rw_pct"] == "100%"
+                                                       and r["note"] == "메모오타" for r in out))
+    check("저장 전 .bak 생성", (Path(D) / "counterparties.csv.bak").exists())
+    fixed = {**rows, "오타행": row(name="오타행")}
+    store.save_master(fixed)
+    cols, out = read()
+    check("고친 같은 이름 행이 있으면 옛 원문은 대체", [r["name"] for r in out].count("오타행") == 1
+          and next(r for r in out if r["name"] == "오타행")["credit_rw_pct"] == "0")
     sys.exit(1 if FAILS else 0)
