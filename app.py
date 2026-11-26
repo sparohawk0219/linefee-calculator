@@ -145,7 +145,7 @@ def _set_leg(prefix, ccy, amt, kind="fixed", rate=0.0, spread=0.0, freq=1, dc="A
 
 
 def _set_names(client, dealer=None):
-    """예시의 상대방: 마스터 이름 (로컬 마스터에 없으면 화면을 그릴 때 샘플 행을 쓴다)."""
+    """예시의 상대방: 마스터 이름 (저장된 마스터에 없으면 화면을 그릴 때 비워 직접 고르게 한다)."""
     ss = st.session_state
     ss["cl_name"] = ss["_preset_cl_name"] = client
     if dealer:
@@ -157,6 +157,7 @@ def load_preset():
     name = ss["preset"]
     m = get_market(MARKETS[ss["market_src"]])
     ss["upfront_oku"] = 0.0
+    ss.pop("_preset_unmatched", None)
     if name == "엔/원 30년 CCS (공공기관 A 중개)":
         ss["product"], ss["mat"] = "CCS", 30.0
         _set_leg("cr_", "KRW", 100 * m.spot_quote["JPY"], rate=4.03, dc="ACT/360")
@@ -636,13 +637,17 @@ if admin:
 # 계산에 쓰는 값은 저장된 것만 (저장하지 않은 관리자 변경은 쓰지 않는다). 저장 직후에도 맞게 여기서 다시 읽는다
 params = store.load_params()
 master, bad_rows, _from_file = store.load_master()
-_sample = None
-for _k in ("cl_name", "dl_name"):   # 로컬 마스터에 예시의 상대방 이름이 없으면 샘플 행을 쓴다
-    _n = ss.get(_k)
-    if _n and _n not in master and ss.get("_preset_" + _k) == _n:
-        _sample = _sample or store.sample_master()
-        if _n in _sample:
-            master[_n] = _sample[_n]
+# 예시의 상대방은 가명이다. 저장된(실) 마스터에 그 이름이 없으면 샘플 행을 끼워 넣지 않고 비워 두어 직접 고르게 한다 (L-050)
+_unmatched = [ss[_k] for _k in ("cl_name", "dl_name")
+              if ss.get(_k) and ss[_k] not in master and ss.get("_preset_" + _k) == ss[_k]]
+for _k in ("cl_name", "dl_name"):
+    if ss.get(_k) in _unmatched:
+        ss[_k] = None
+if _unmatched:
+    ss["_preset_unmatched"] = _unmatched
+if ss.get("_preset_unmatched"):
+    st.info("예시의 상대방(" + ", ".join(ss["_preset_unmatched"]) + ")은 가명이라 저장된 마스터에 없습니다. "
+            "'2. 상대방'에서 이 거래의 고객과 헤지 딜러를 직접 고르세요.")
 if bad_rows:
     st.warning("거래상대방 마스터에서 읽지 못한 행이 있습니다: " + "; ".join(bad_rows))
 
