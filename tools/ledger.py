@@ -142,16 +142,41 @@ def find(rows: list, lid: str) -> dict:
     sys.exit(f"{lid} 없음")
 
 
+class _Lock:
+    """여러 검증자가 동시에 기록해도 읽기-수정-쓰기가 겹치지 않게 하는 잠금 파일 (Run C V1 병렬)."""
+    def __init__(self):
+        self.path = REVIEWS / "ledger.lock"
+
+    def __enter__(self):
+        import os
+        import time
+        for _ in range(600):
+            try:
+                self.fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                return self
+            except FileExistsError:
+                if time.time() - self.path.stat().st_mtime > 60:   # 죽은 프로세스가 남긴 잠금
+                    self.path.unlink(missing_ok=True)
+                time.sleep(0.1)
+        sys.exit("원장 잠금을 얻지 못했습니다 (reviews/ledger.lock).")
+
+    def __exit__(self, *exc):
+        import os
+        os.close(self.fd)
+        self.path.unlink(missing_ok=True)
+
+
 def setter(field: str, note_field: str, allowed: list):
     def cmd(a):
         if a.value not in allowed:
             sys.exit(f"값은 {' | '.join(allowed)} 중 하나")
-        rows = load()
-        r = find(rows, a.id)
-        r[field], r[note_field] = a.value, " ".join(a.note)
-        if field == "impl":   # 다시 구현하면 이전 종결 판정은 무효
-            r["closure"], r["closure_note"] = None, ""
-        save(rows)
+        with _Lock():
+            rows = load()
+            r = find(rows, a.id)
+            r[field], r[note_field] = a.value, " ".join(a.note)
+            if field == "impl":   # 다시 구현하면 이전 종결 판정은 무효
+                r["closure"], r["closure_note"] = None, ""
+            save(rows)
         print(f"{r['id']} {field} = {a.value}")
         return 0
     return cmd
