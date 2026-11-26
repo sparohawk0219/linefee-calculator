@@ -73,4 +73,20 @@ if __name__ == "__main__":
     cols, out = read()
     check("고친 같은 이름 행이 있으면 옛 원문은 대체", [r["name"] for r in out].count("오타행") == 1
           and next(r for r in out if r["name"] == "오타행")["credit_rw_pct"] == "0")
+    print("파라미터 변경 이력 (L-091)")
+    from dataclasses import replace as _rep
+    from linefee.trade import BankParams
+    import json as _json
+    lp = store.params_log_path()
+    store.save_params(BankParams())
+    check("기본값 그대로 저장하면 이력 없음", not lp.exists())
+    store.save_params(_rep(BankParams(), hurdle_after_tax=0.12, n_paths=20000))
+    lines = [_json.loads(x) for x in lp.read_text(encoding="utf-8").splitlines()]
+    check("바뀐 키만 전 -> 후로 기록", len(lines) == 1 and lines[0]["changes"] == {
+        "hurdle_after_tax": [0.1, 0.12], "n_paths": [10000, 20000]} and "ts" in lines[0])
+    store.save_params(_rep(BankParams(), hurdle_after_tax=0.12, n_paths=20000))
+    check("같은 값 다시 저장하면 이력 없음", len(lp.read_text(encoding="utf-8").splitlines()) == 1)
+    store.save_params(BankParams())
+    last = _json.loads(lp.read_text(encoding="utf-8").splitlines()[-1])["changes"]
+    check("되돌리면 12% -> 10%도 기록", last["hurdle_after_tax"] == [0.12, 0.1])
     sys.exit(1 if FAILS else 0)

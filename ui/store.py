@@ -10,6 +10,7 @@ import json
 import math
 import os
 import shutil
+from datetime import datetime
 from dataclasses import asdict, fields, replace
 from pathlib import Path
 
@@ -41,6 +42,12 @@ def master_path() -> Path:
 
 def params_path() -> Path:
     return data_dir() / "bank_params.json"
+
+
+def params_log_path() -> Path:
+    """관리자 파라미터 변경 이력 (JSONL, 덧붙이기). 데이터 폴더라 gitignore다."""
+    return data_dir() / "params_log.jsonl"
+
 
 
 # ---------------------------------------------------------------------------
@@ -208,10 +215,30 @@ def load_params() -> BankParams:
     return replace(base, **upd)
 
 
+def _append_jsonl(path: Path, rec: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+
+def param_changes(old: BankParams, new: BankParams) -> dict:
+    """바뀐 관리자 파라미터 키 -> [이전, 이후]."""
+    o, n = asdict(old), asdict(new)
+    return {k: [o[k], n[k]] for k in PARAM_FIELDS if o[k] != n[k]}
+
+
 def save_params(p: BankParams) -> None:
+    """파라미터를 쓰고, 바뀐 키가 있으면 변경 이력(시각, 키별 전 -> 후)을 params_log.jsonl에 덧붙인다 (L-091).
+
+    이력 기록에 실패하면 저장하지 않고 OSError를 올린다 (이력 없이 값만 바뀌지 않게).
+    """
     path = params_path()
     path.parent.mkdir(parents=True, exist_ok=True)
+    changes = param_changes(load_params(), p)
     d = asdict(p)
     tmp = path.with_suffix(".json.tmp")
     tmp.write_text(json.dumps({k: d[k] for k in PARAM_FIELDS}, ensure_ascii=False, indent=1), encoding="utf-8")
+    if changes:
+        _append_jsonl(params_log_path(), {"ts": datetime.now().isoformat(timespec="seconds"), "changes": changes})
     os.replace(tmp, path)
+

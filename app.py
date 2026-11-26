@@ -967,6 +967,16 @@ if res:
         f"상품 {PRODUCTS[res.get('product_key', ct.product)]}, 만기 {ct.maturity:g}년  \n"
         f"{leg_txt}  \n"
         f"고객 {deal.client.name}, 헤지 {deal.dealer.name} ({hk}), 라인피 {fee_txt}")
+    # 계산에 쓴 주요 파라미터 (L-091): 사후에 어떤 값으로 낸 결과인지 알 수 있게
+    kap = ("과거 추정 " if rp.rate_mean_reversion is None else "관리자 입력 ") + (
+        ", ".join(f"{c} {v:.3f}" for c, v in r.kappa.items()) if r.kappa else "없음")
+    st.caption(
+        f"계산에 쓴 파라미터: LGD {deal.client.lgd:.0%}, CET1 목표 {rp.capital_ratio:.1%}, 세후 요구수익률 {rp.hurdle_after_tax:.1%}, "
+        f"세율 {rp.tax_rate:.1%}, KVA 조달 alpha {rp.kva_funding_spread * 1e4:.0f}bp, 금리 kappa({kap}), "
+        f"금리 변동성 배수 x{rp.rate_vol_scale:g}, 경로 수 {rp.n_paths:,}, BA-CVA 한계계수 {rp.ba_cva_marginal_factor:g}, "
+        f"FTP USD {rp.ftp_spread * 1e4:.0f}bp / KRW {rp.ftp_spread_krw * 1e4:.0f}bp, IM 조달 스프레드 {rp.im_funding_spread * 1e4:.0f}bp, "
+        f"FBA {'인정' if rp.recognise_fba else '불인정'}, 운영위험 BIC {rp.op_risk_bic:.0%} x ILM {rp.op_risk_ilm:g} / {rp.op_risk_years}년, "
+        f"건당 처리 비용 {rp.processing_cost_krw:,.0f}원")
     be_line = ("0% 미만 (어떤 요구수익률에서도 손실)" if hb is None
                else (f"{hb:.1%}" if hb < 0.5 else "50% 이상 (찾는 범위 0~50% 밖이라 숫자가 아니라 '50% 이상'으로 읽는다. 50%까지 올려도 이익이 남는다)"))
     if res["loc"] != "upfront" and res["hedge_kind"] != "direct":
