@@ -23,7 +23,8 @@ Python 3.10 이상.
 
 - 관리자 비밀번호: `.streamlit/secrets.toml.example`을 `.streamlit/secrets.toml`로 복사해 `admin_password`를 바꾼다. 이 파일이 없으면 관리자 로그인은 막힌다.
 - 데이터 디렉터리: 환경 변수 `LINEFEE_DATA_DIR`(없으면 저장소의 `data/`). 관리자가 `저장`을 누르면 여기에 쓰고, 모든 사용자의 계산에 쓰인다.
-  - `counterparties.csv`: 거래상대방 마스터 (열: name, grade, pd_pct, csa, dealer_line, credit_rw_pct, ba_cva_sector). 없으면 가명 샘플 `data/counterparties.sample.csv`를 읽는다. 엑셀에서 UTF-8 CSV로 만들어도 된다.
+  - `counterparties.csv`: 거래상대방 마스터 (열 10개: name, grade, pd_pct, csa, dealer_line, credit_rw_pct, ba_cva_sector, vm_ccy, rw_method, sales_eok).
+    뒤의 세 열은 선택이다. `vm_ccy`는 VM 담보 통화(USD 또는 KRW, 빈 칸이면 USD)로 FVA 조달 스프레드를 고른다. `rw_method`는 신용 RW 방식(`고정` 또는 `IRB`, 빈 칸이면 고정)이며, `IRB`면 `credit_rw_pct` 대신 PD로 기본내부등급법 RW를 계산한다(METHODOLOGY 7.3). `sales_eok`는 연 매출(억원, 빈 칸 가능)로 700억 이하면 IRB 중소기업 상관계수 조정에 쓴다. 7열 파일도 읽히지만 `rw_method`가 비면 고정 RW가 쓰이므로 IRB 기업은 열을 채운다. 없으면 가명 샘플 `data/counterparties.sample.csv`를 읽는다. 엑셀에서 UTF-8 CSV로 만들어도 된다.
   - `bank_params.json`: 저장한 은행 파라미터. 없으면 엔진 기본값.
   - 둘 다 실데이터라 gitignore 대상이다.
 

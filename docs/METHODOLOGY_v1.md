@@ -96,7 +96,10 @@ FX 선도 마진은 KRW 다리 금액을 `마진 x 외화 명목`만큼 은행�
 화면 단위는 원/외화 1단위이고 엔은 원/100엔이다(내부는 원/1엔).
 
 **상대방 입력 항목.**
-- 신용 위험가중치(표준방법)
+- 마스터 열 10개: `name`, `grade`, `pd_pct`, `csa`, `dealer_line`, `credit_rw_pct`, `ba_cva_sector`, `vm_ccy`, `rw_method`, `sales_eok` (`ui/store.py`의 `MASTER_COLS`)
+- 신용 위험가중치: `rw_method`가 `고정`(빈 칸 포함)이면 `credit_rw_pct`, `IRB`면 PD로 기본내부등급법 계산(7.3)
+- `vm_ccy`: VM 담보 통화(USD·KRW, 빈 칸이면 USD). FVA 조달 스프레드만 고르고 할인 커브는 바꾸지 않는다(6장)
+- `sales_eok`: 연 매출(억원, 빈 칸 가능). 700억 이하 IRB 중소기업 상관계수 조정(7.3)
 - BA-CVA 업종·등급(위험가중치 표는 별표3 313.(2) = CRE50.16)
 - 연 PD, LGD
 - CSA 유형: 없음, VM, VM+IM
