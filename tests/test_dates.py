@@ -40,8 +40,29 @@ def test_business_day():
         check("토요일 as_of 오류 메시지에 직전 영업일", "2026-11-13" in str(e), True)
 
 
+def test_spot_date():
+    print("현물 결제일 관행 (L-024): T+1은 비USD 통화 영업일, 결제일은 통화쌍 + USD 공통 영업일")
+    from linefee import curves as cv
+
+    def sd(as_of, ccys):
+        return cv.spot_date(cv.qdate(as_of), ccys).ISO()
+    # 추수감사절 전날(수): 미국 휴일 목요일을 T+1로 센다 -> 금요일 (공통 달력 2영업일이면 월요일)
+    check("2026-11-25 USDKRW", sd("2026-11-25", ["USD", "KRW"]), "2026-11-27")
+    check("2026-11-25 USDJPY", sd("2026-11-25", ["USD", "JPY"]), "2026-11-27")
+    check("2026-11-25 JPYKRW", sd("2026-11-25", ["KRW", "JPY"]), "2026-11-27")
+    check("2026-11-25 USDKRW 결제 지연 영업일 수", cv.spot_days(cv.qdate("2026-11-25"), ["USD", "KRW"]), 1)
+    # 한글날(금) 다음 월요일이 미국 휴일(콜럼버스데이): KRW T+1 = 월, T+2 = 화
+    check("2026-10-08 USDKRW", sd("2026-10-08", ["USD", "KRW"]), "2026-10-13")
+    # 교차 통화쌍도 결제일이 미국 휴일이면 넘긴다: 2026-07-02(목) JPYKRW T+2 = 07-06(월)
+    check("2026-07-02 JPYKRW", sd("2026-07-02", ["KRW", "JPY"]), "2026-07-06")
+    check("평일 USDKRW T+2", sd("2026-11-11", ["USD", "KRW"]), "2026-11-13")
+    sc = cv.schedule("2026-11-25", "FXFWD", ("KRW", "USD"), 12, 1, "ACT/365")
+    check("FX 선도 시작일 = 현물 결제일 (일)", round(sc.start[0] * 365), 2)
+
+
 if __name__ == "__main__":
     test_years_ago()
     test_business_day()
+    test_spot_date()
     print("실패: " + (", ".join(FAILS) if FAILS else "없음"))
     sys.exit(1 if FAILS else 0)

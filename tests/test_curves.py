@@ -6,6 +6,7 @@
 허용오차 0.006bp (FX 선도 0.001원), METHODOLOGY_v1.md의 서술과 같은 숫자.
 엔진은 OIS 지급 지연(2영업일)을 무시하므로 그만큼의 차이는 남는다 (지급 지연이 휴일에 걸리는 날은 더 커진다: 11-25 스냅샷 USD OIS 1개월 0.24bp. 허용오차는 휴일에 걸리지 않는 날 기준이라 완화하지 않는다).
 1주 OIS·1주 스왑포인트·CD 91일은 엔진 일정이 개월 단위라 커브에서 직접 재평가한다.
+JPY 베이시스·USDJPY 선도는 JPYKRW 호가가 USDKRW/USDJPY 교차와 어긋나는 날 허용오차를 넘을 수 있다 (DECISIONS M20, 조치하지 않음).
 """
 import sys
 
@@ -88,11 +89,11 @@ def krw_cd_par(m):
 
 
 def fx_outright_1w(m, ccy):
-    """1주 선도환율 (호가 단위: USDKRW, USDJPY). 결제일(T+2)에서 1주 뒤, 두 통화 공통 영업일."""
+    """1주 선도환율 (호가 단위: USDKRW, USDJPY). 현물 결제일(curves.spot_date, T+2 관행)에서 1주 뒤, 두 통화 공통 영업일."""
     today = cv.qdate(m.as_of)
     other = "KRW" if ccy == "USD" else "JPY"
     cal = cv.calendar(["USD", other])
-    t = _t(m, cal.advance(cal.advance(today, 2, ql.Days), ql.Period("1W"), ql.ModifiedFollowing))
+    t = _t(m, cal.advance(cv.spot_date(today, ["USD", other]), ql.Period("1W"), ql.ModifiedFollowing))
     return float(m.fwd_fx("USD", t) if ccy == "USD" else m.fwd_fx("USD", t) / m.fwd_fx("JPY", t))
 
 

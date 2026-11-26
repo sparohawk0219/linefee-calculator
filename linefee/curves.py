@@ -36,6 +36,33 @@ def calendar(ccys) -> ql.Calendar:
     return cals[0] if len(cals) == 1 else ql.JointCalendar(*cals)
 
 
+def spot_date(today: ql.Date, ccys) -> ql.Date:
+    """통화쌍 현물 결제일 (T+2, 외환시장 관행). 현물·FX 스왑포인트·통화스왑 시작일이 모두 이 날짜를 쓴다.
+
+    T+1: USD가 아닌 통화들의 공통 영업일로 센다 (T+1이 미국 휴일일 뿐이면 건너뛰지 않는다).
+    T+2: T+1 다음의 통화쌍 + USD 공통 영업일 (결제일은 두 통화와 USD 모두 영업일이어야 한다. 교차 통화쌍 JPYKRW도 같다).
+    예: 추수감사절 전날(수) USDKRW·USDJPY 현물은 금요일 (미국 휴일 목요일을 T+1로 센다).
+    QuantLib FxSwapRateHelper에 tradingCalendar(미국)를 주었을 때의 날짜와 같다
+    (비USD 달력으로 2영업일 → USD 포함 공통 달력으로 조정).
+    """
+    ccys = set(ccys)
+    d1 = calendar(sorted(ccys - {"USD"}) or ["USD"]).advance(today, 1, ql.Days)
+    return calendar(ccys | {"USD"}).advance(d1, 1, ql.Days)
+
+
+def spot_days(today: ql.Date, ccys) -> int:
+    """평가일에서 현물 결제일(spot_date)까지 통화쌍 공통 영업일 수 (보통 2, 미국 휴일이 T+1이면 1).
+
+    결제 지연을 영업일 수로만 받는 QuantLib 헬퍼(통화스왑)에 넘겨 시작일을 spot_date와 같게 한다.
+    """
+    cal, target = calendar(ccys), spot_date(today, ccys)
+    n, d = 0, today
+    while d < target:
+        d = cal.advance(d, 1, ql.Days)
+        n += 1
+    return n
+
+
 def qdate(iso: str) -> ql.Date:
     return ql.DateParser.parseISO(iso)
 
@@ -136,9 +163,11 @@ def krw_irs_curve(today, quotes: dict) -> ql.YieldTermStructure:
 
 
 def _fx_helpers(points: dict, spot: float, ccy: str, usd: ql.YieldTermStructureHandle) -> list:
-    """USD/ccy 스왑포인트 (ccy 단위, 이미 배율 반영) -> FxSwapRateHelper. USD가 담보 통화(기준 통화)."""
-    cal = calendar(["USD", ccy])
-    return [ql.FxSwapRateHelper(_q(v), _q(spot), period(k), 2, cal, MF, False, True, usd)
+    """USD/ccy 스왑포인트 (ccy 단위, 이미 배율 반영) -> FxSwapRateHelper. USD가 담보 통화(기준 통화).
+
+    결제일은 spot_date 관행: ccy 달력으로 2영업일 뒤 USD 휴일이면 다음 공통 영업일 (tradingCalendar = 미국).
+    """
+    return [ql.FxSwapRateHelper(_q(v), _q(spot), period(k), 2, CALENDARS[ccy], MF, False, True, usd, CALENDARS["USD"])
             for k, v in points.items()]
 
 
@@ -153,11 +182,12 @@ def krw_csa_curve(today, ccs: dict, points: dict, spot: float,
     hs = _fx_helpers(points, spot, "KRW", usd)
     sofr = ql.Sofr(usd)
     cal = calendar(["USD", "KRW"])
+    lag = spot_days(today, ["USD", "KRW"])    # 시작일 = 현물 결제일 (spot_date)
     for k, v in ccs.items():
         if months(k) <= cap:
             continue
         hs.append(ql.ConstNotionalCrossCurrencySwapRateHelper(
-            _q(v / 100), period(k), 2, cal, MF, False, ql.Quarterly, DC365, sofr, usd, False,
+            _q(v / 100), period(k), lag, cal, MF, False, ql.Quarterly, DC365, sofr, usd, False,
             0, None, ql.Quarterly))
     return _build(today, hs)
 
@@ -171,11 +201,12 @@ def jpy_csa_curve(today, basis_bp: dict, points: dict, spot: float, usd: ql.Yiel
     cap = max((months(k) for k in points), default=0)
     hs = _fx_helpers(points, spot, "JPY", usd)
     cal = calendar(["USD", "JPY"])
+    lag = spot_days(today, ["USD", "JPY"])    # 시작일 = 현물 결제일 (spot_date)
     for k, v in basis_bp.items():
         if months(k) <= cap:
             continue
         hs.append(ql.ConstNotionalCrossCurrencyBasisSwapRateHelper(
-            _q(v / 1e4), period(k), 2, cal, MF, False, ql.Sofr(usd), ql.Tonar(tona), usd,
+            _q(v / 1e4), period(k), lag, cal, MF, False, ql.Sofr(usd), ql.Tonar(tona), usd,
             True, False, ql.Quarterly))
     return _build(today, hs)
 
@@ -195,13 +226,20 @@ class Sched:
 
 
 def spot_lag(product: str, ccys) -> int:
-    """거래 시작(결제) 지연 영업일. 원화 IRS T+1, 나머지 T+2."""
+    """거래 시작(결제) 지연 영업일. 원화 IRS T+1, 나머지 T+2 (통화쌍 거래의 T+2는 spot_date 관행으로 센다)."""
     return 1 if product == "IRS" and set(ccys) == {"KRW"} else 2
+
+
+def start_date(today: ql.Date, product: str, ccys) -> ql.Date:
+    """거래 시작일. 두 통화 거래(통화스왑·FX 선도)는 현물 결제일(spot_date), 같은 통화 IRS·OIS는 그 통화 달력으로 T+1·T+2."""
+    if len(set(ccys)) > 1:
+        return spot_date(today, ccys)
+    return calendar(ccys).advance(today, spot_lag(product, ccys), ql.Days)
 
 
 @lru_cache(maxsize=4096)
 def schedule(as_of: str, product: str, ccys: tuple, n_months: int, freq: int, day_count: str) -> Sched:
-    """시작일 = 평가일 + 결제 지연(공통 영업일), 만기일 = 시작일 + 만기(조정 전 날짜).
+    """시작일 = start_date (통화쌍은 현물 결제일 관행, 같은 통화는 결제 지연 영업일), 만기일 = 시작일 + 만기(조정 전 날짜).
 
     지급일은 조정 전 만기일에서 거꾸로 12/freq개월씩 잡은 뒤 각각 수정 익영업일로 조정한다(QuantLib 스왑과 같은 방식).
     조정한 만기일에서 거꾸로 잡으면 만기일이 휴일일 때 시작 부분에 며칠짜리 구간이 생긴다.
@@ -209,7 +247,7 @@ def schedule(as_of: str, product: str, ccys: tuple, n_months: int, freq: int, da
     """
     today = qdate(as_of)
     cal = calendar(ccys)
-    eff = cal.advance(today, spot_lag(product, ccys), ql.Days)
+    eff = start_date(today, product, ccys)
     end = eff + ql.Period(n_months, ql.Months)
     if product == "FXFWD":
         dates = [eff, cal.adjust(end, MF)]
@@ -224,5 +262,6 @@ def schedule(as_of: str, product: str, ccys: tuple, n_months: int, freq: int, da
 
 
 def spot_date_time(as_of: str, ccys) -> float:
+    """현물 결제일(spot_date)의 시점 (년, ACT/365F)."""
     today = qdate(as_of)
-    return DC365.yearFraction(today, calendar(ccys).advance(today, 2, ql.Days))
+    return DC365.yearFraction(today, spot_date(today, ccys))
