@@ -1,9 +1,12 @@
 """대시보드(AppTest) 확인. 스냅샷 필요. python -m tests.test_app"""
+import contextlib
 import os
 import sys
 import tempfile
 from pathlib import Path
 
+from streamlit import config as st_config
+from streamlit.runtime.secrets import secrets_singleton
 from streamlit.testing.v1 import AppTest
 
 from linefee.trade import BankParams
@@ -20,6 +23,19 @@ def check(label, ok):
 ADMIN_PW = "test-admin-pw"   # 시험용 값 (실제 비밀번호 아님)
 DATA_DIR = tempfile.mkdtemp(prefix="linefee_test_app_")   # 시험마다 비워 쓰는 데이터 디렉터리
 os.environ["LINEFEE_DATA_DIR"] = DATA_DIR
+
+
+@contextlib.contextmanager
+def no_secrets_file():
+    """비밀값 파일(.streamlit/secrets.toml)이 없는 상태로 격리한다. 이 PC의 파일 유무에 시험이 좌우되지 않게 한다 (L-070)."""
+    saved = st_config.get_option("secrets.files")
+    st_config.set_option("secrets.files", [])
+    secrets_singleton._reset()
+    try:
+        yield
+    finally:
+        st_config.set_option("secrets.files", saved)
+        secrets_singleton._reset()
 
 
 def new_app(secret=ADMIN_PW):
@@ -112,12 +128,13 @@ def test_roles():
     button(at, "로그아웃").click().run()
     check("로그아웃하면 일반 화면으로", ("role" not in at.session_state or at.session_state["role"] != "admin")
           and not [w for w in at.number_input if w.key and w.key.startswith("adm_")])
-    nosecret = new_app(secret=None)
-    check("비밀값이 없어도 일반 화면이 뜬다", not nosecret.exception)
-    login(nosecret)
-    check("비밀값이 없으면 로그인을 막고 안내한다",
-          ("role" not in nosecret.session_state or nosecret.session_state["role"] != "admin")
-          and any("설정되지 않았습니다" in w.value for w in nosecret.warning))
+    with no_secrets_file():
+        nosecret = new_app(secret=None)
+        check("비밀값이 없어도 일반 화면이 뜬다", not nosecret.exception)
+        login(nosecret)
+        check("비밀값이 없으면 로그인을 막고 안내한다",
+              ("role" not in nosecret.session_state or nosecret.session_state["role"] != "admin")
+              and any("설정되지 않았습니다" in w.value for w in nosecret.warning))
 
 
 def test_admin_save_changes_general():
