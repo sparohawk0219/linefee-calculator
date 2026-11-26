@@ -51,7 +51,7 @@ from linefee.engine import trade_value_today  # noqa: E402
 from linefee.pricing import (Run, annual_pnl, breakeven, fee_unit_pv, market_gap,  # noqa: E402
                              market_hedge, par_client, run)
 from linefee.trade import (BA_CVA_RW, CCP_REG_MPOR_DAYS, CSA, BankParams, Counterparty, Leg, Trade,  # noqa: E402
-                           build_deal, fee_delta)
+                           build_deal, fee_delta, untradable)
 from ui import store  # noqa: E402
 
 OKU = 1e8
@@ -372,13 +372,15 @@ def cp_pick(key: str, title: str, names: list, master: dict) -> Counterparty:
         return None
     st.caption(f"{title} = {name}. CSA: {master[name]['csa']}. 이 거래의 {title}이(가) 맞는지 확인하세요.")
     flags = {"등급 갱신 필요": "옛 등급 체계(세분 전)라 가운데 등급의 PD로 임시 계산합니다. 거래 전 재평가 등급으로 바꾸세요.",
-             "부도 등급": "부도 등급(D) 상대방입니다.",
              "32조 구분 확인 필요": "공공기관 위험가중치 구분(별표3 32조)이 확인되지 않아 보수적으로 20%를 씁니다.",
              "외부등급 없음": "외부 신용등급이 없어 무등급 위험가중치를 씁니다."}
     for tag, msg in flags.items():
         if f"[{tag}]" in name:
             st.warning(f"{title}: {msg}")
-    return store.counterparty(master[name])
+    cp = store.counterparty(master[name])
+    if untradable(cp):   # 부도 등급(PD 100%): 거래불가, 계산 막음 (M25)
+        st.error(f"{title}: 거래불가. 부도 등급(D, PD 100%) 상대방이라 라인피를 계산하지 않습니다.")
+    return cp
 
 
 # ---------------------------------------------------------------------------
@@ -814,6 +816,9 @@ def validate() -> list[str]:
         errs.append("고객을 고르지 않았습니다. '2. 상대방'에서 거래의 고객을 고르세요")
     if dealer is None:
         errs.append("헤지 딜러를 고르지 않았습니다. '2. 상대방'에서 거래의 헤지 딜러를 고르세요")
+    for who, cp in (("고객", client), ("헤지 딜러", dealer)):
+        if cp is not None and untradable(cp):
+            errs.append(f"{who} 거래불가: 부도 등급(PD 100%) 상대방 ({cp.name}). 계산하지 않습니다 (DECISIONS M25)")
     trades = [client_trade] + ([hedge_trade] if hedge_trade else [])
     if hedge_trade and (hedge_trade.currencies != client_trade.currencies or hedge_trade.product != client_trade.product):
         errs.append("직접 입력 헤지의 상품·통화 쌍이 고객 거래와 다름: 같은 상품, 같은 두 통화여야 헤지가 고객 위험을 상쇄함 "

@@ -28,7 +28,7 @@ from .engine import (leg_annuity_krw, leg_value_today, remaining_value_ratio, si
                      trade_forward_value, trade_value_paths, trade_value_today)
 from .market import MarketData
 from .regcap import capital_paths, ccp_im_profile, im_profile, sa_ccr_ead
-from .trade import BankParams, Deal, Trade
+from .trade import BankParams, Deal, Trade, untradable
 
 
 def market_hedge(client_trade: Trade, m: MarketData) -> Trade:
@@ -228,7 +228,14 @@ def mc_martingale_check(values: np.ndarray, forward: np.ndarray, antithetic: boo
     return int((z[1:] > 3).sum()), len(z) - 1
 
 
+class UntradableError(ValueError):
+    """거래불가 상대방 (부도 등급, DECISIONS M25)."""
+
+
 def run(deal: Deal, m: MarketData, p: BankParams) -> Run:
+    for cp in (deal.client, deal.dealer):
+        if (why := untradable(cp)) is not None:
+            raise UntradableError(why)
     ccys = deal.client_trade.currencies | deal.hedge_trade.currencies
     ends = {id(tr): m.end_time(tr) for tr in (deal.client_trade, deal.hedge_trade)}
     horizon = max(ends.values())

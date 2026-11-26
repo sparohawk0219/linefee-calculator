@@ -229,6 +229,36 @@ def test_master_rename():
     check("다른 행과 같은 이름으로 바꾸면 거부", any("이미 있습니다" in e.value for e in at.error))
 
 
+def test_default_grade():
+    print("부도 등급(PD 100%) 상대방은 거래불가, 계산 막음 (M25, L-060)")
+    new_app()
+    seed = ("name,grade,pd_pct,csa,dealer_line,credit_rw_pct,ba_cva_sector\n"
+            "기업 D,투기등급·무등급,100,없음,N,100,소재·에너지·산업재·농업·제조·광업\n"
+            "딜러 B,투자등급,0.0,VM+IM,Y,50,금융기관(정부보증 금융 포함)\n")
+    (Path(DATA_DIR) / "counterparties.csv").write_text(seed, encoding="utf-8-sig")
+    at = AppTest.from_file(str(Path(__file__).resolve().parent.parent / "app.py"), default_timeout=600)
+    at.run()
+    at.selectbox(key="preset").set_value("USD/KRW 5년 CCS (기업)").run()
+    at.selectbox(key="cl_name").set_value("기업 D").run()
+    at.selectbox(key="dl_name").set_value("딜러 B").run()
+    check("부도 등급 고객을 고르면 거래불가 표시", any("거래불가" in e.value for e in at.error))
+    button(at, "계산").click().run()
+    check("계산이 막히고 결과가 없다", "result" not in at.session_state and not at.exception
+          and any("거래불가" in e.value and "PD 100%" in e.value for e in at.error))
+    from linefee.pricing import UntradableError, run
+    from linefee.trade import CSA, Counterparty, Leg, Trade, build_deal
+    from linefee.market import load
+    m = load()
+    tr = Trade([Leg("KRW", 1e8 * m.spot_quote["USD"], "receive", rate=0.03, freq=4),
+                Leg("USD", 1e8, "pay", kind="float", freq=4, day_count="ACT/360")], 1.0)
+    d = build_deal(tr, Counterparty("기업 D", 1.0, 0.07, pd=1.0), Counterparty("딜러", 0.5, 0.05, csa=CSA(vm=True)))
+    try:
+        run(d, m, BankParams(n_paths=200))
+        check("엔진도 PD 100%면 오류", False)
+    except UntradableError as e:
+        check("엔진도 PD 100%면 명확한 오류 (UntradableError)", "PD 100%" in str(e))
+
+
 def test_validate_params():
     print("BankParams.problems (L-013)")
     check("기본값은 문제 없음", BankParams().problems() == [])
@@ -253,5 +283,6 @@ if __name__ == "__main__":
     test_admin_save_changes_general()
     test_master()
     test_master_rename()
+    test_default_grade()
     print("실패: " + (", ".join(FAILS) if FAILS else "없음"))
     sys.exit(1 if FAILS else 0)

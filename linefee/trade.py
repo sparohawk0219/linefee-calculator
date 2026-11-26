@@ -110,6 +110,16 @@ class Counterparty:
     sales_eok: float | None = None   # 연 매출액 (억원). 700억 이하면 중소기업 상관계수 조정 (별표3 120.나)
 
 
+def untradable(cp: "Counterparty") -> str | None:
+    """거래불가 사유 (없으면 None). 부도 등급(PD 100%) 상대방은 라인피를 계산하지 않는다 (DECISIONS M25, Run C L-060).
+
+    PD 100%에서는 E/L이 시간 격자에 따라 바뀌는 인공값이 되고 기본내부등급법 RW가 0이라 라인피가 PD 2~11% 상대방보다 낮게 나온다.
+    """
+    if cp is not None and cp.pd >= 1.0:
+        return f"{cp.name}: 부도 등급(PD 100%) 상대방은 거래불가입니다 (라인피를 계산하지 않음, DECISIONS M25)"
+    return None
+
+
 @dataclass
 class BankParams:
     capital_ratio: float = 0.13          # CET1 목표비율
