@@ -331,7 +331,7 @@ def leg_inputs(prefix: str, title: str, direction: str, product: str) -> Leg:
     kind = st.radio("금리 형태", kinds, key=prefix + "kind", horizontal=True,
                     format_func=lambda k: "고정" if k == "fixed" else ("SOFR" if ccy == "USD" else "TONA") + " 변동")
     if kind == "fixed":
-        rate = st.number_input("고정금리 (%)", key=prefix + "rate", step=0.01, format="%.4f") / 100
+        rate = st.number_input("고정금리 (%)", key=prefix + "rate", step=0.05, format="%.2f") / 100
     else:
         rate = st.number_input("가산 스프레드 (bp)", key=prefix + "spread", step=1.0, format="%.2f") / 1e4
     c1, c2 = st.columns(2)
@@ -541,9 +541,13 @@ with st.sidebar:
 # ---------------------------------------------------------------------------
 # 관리자: 거래상대방 마스터 편집과 저장
 # ---------------------------------------------------------------------------
+VM_BLANK = "(빈 칸: USD)"
+
+
 def _blank_row() -> dict:
     return {"name": "", "grade": store.GRADES[0], "pd_pct": 0.0, "csa": store.CSA_KINDS[0], "dealer_line": "N",
-            "credit_rw_pct": 100.0, "ba_cva_sector": list(BA_CVA_RW)[0]}
+            "credit_rw_pct": 100.0, "ba_cva_sector": list(BA_CVA_RW)[0], "vm_ccy": "", "rw_method": store.RW_METHODS[0],
+            "sales_eok": ""}
 
 
 def on_pick():
@@ -553,18 +557,37 @@ def on_pick():
     ss["adm_m_name"], ss["adm_m_grade"], ss["adm_m_csa"] = row["name"], row["grade"], row["csa"]
     ss["adm_m_pd"], ss["adm_m_rw"] = float(row["pd_pct"]), float(row["credit_rw_pct"])
     ss["adm_m_sector"], ss["adm_m_dealer"] = row["ba_cva_sector"], store.is_dealer(row)
+    ss["adm_m_vm"] = (row.get("vm_ccy") or "").strip().upper() or VM_BLANK
+    ss["adm_m_rwm"] = row.get("rw_method") or store.RW_METHODS[0]
+    ss["adm_m_sales"] = str(row.get("sales_eok") or "")
 
 
 def on_apply():
     row = {"name": ss["adm_m_name"].strip(), "grade": ss["adm_m_grade"], "pd_pct": ss["adm_m_pd"],
            "csa": ss["adm_m_csa"], "dealer_line": "Y" if ss["adm_m_dealer"] else "N",
-           "credit_rw_pct": ss["adm_m_rw"], "ba_cva_sector": ss["adm_m_sector"]}
+           "credit_rw_pct": ss["adm_m_rw"], "ba_cva_sector": ss["adm_m_sector"],
+           "vm_ccy": "" if ss["adm_m_vm"] == VM_BLANK else ss["adm_m_vm"], "rw_method": ss["adm_m_rwm"],
+           "sales_eok": ss["adm_m_sales"].strip()}
     why = store.check_row(row)
     if why:
         ss["_adm_msg"] = ("error", why)
         return
-    prev = ss["adm_master"].get(row["name"], {})
-    ss["adm_master"][row["name"]] = {**prev, **row}   # 화면에 없는 열(vm_ccy 등)은 그대로 둔다
+    draft = ss["adm_master"]
+    pick = ss.get("adm_m_pick", NEW_ROW)
+    renamed = pick != NEW_ROW and pick in draft and pick != row["name"]
+    if renamed and row["name"] in draft:
+        ss["_adm_msg"] = ("error", f"같은 이름의 다른 상대방({row['name']})이 이미 있습니다. 다른 이름을 쓰거나 그 행을 고르세요.")
+        return
+    # 화면에 없는 열(비고 등)은 고른 행(이름을 바꿨으면 옛 행, 아니면 같은 이름의 행)에서 이어받는다
+    prev = draft.get(pick if renamed else row["name"], {})
+    if renamed:   # 이름 변경 = 옛 행 교체 (제자리에서 바꾼다)
+        ss["adm_master"] = draft = {(row["name"] if k == pick else k): ({**prev, **row} if k == pick else v)
+                                    for k, v in draft.items()}
+        ss["adm_m_pick"] = row["name"]
+        ss["_adm_msg"] = ("success", f"{pick}의 이름을 {row['name']}(으)로 바꿔 마스터 초안에 반영했습니다 (옛 행은 교체). "
+                                     "저장해야 계산에 쓰입니다.")
+        return
+    draft[row["name"]] = {**prev, **row}
     ss["_adm_msg"] = ("success", f"{row['name']}을(를) 마스터 초안에 반영했습니다. 저장해야 계산에 쓰입니다.")
 
 
@@ -595,9 +618,14 @@ if admin:
                    "(사이드바의 은행 파라미터·시뮬레이션도 함께 저장). LGD는 60% 고정.")
         st.dataframe(pd.DataFrame([{"이름": r["name"], "등급": r["grade"], "연 PD (%)": float(r["pd_pct"]),
                                     "CSA": r["csa"], "딜러 라인": "예" if store.is_dealer(r) else "아니오",
-                                    "신용 위험가중치 (%)": float(r["credit_rw_pct"]),
+                                    "RW 방식": r.get("rw_method") or store.RW_METHODS[0],
+                                    "신용 위험가중치 (%)": (None if (r.get("rw_method") or "고정") == "IRB"
+                                                       else float(r["credit_rw_pct"])),
+                                    "매출 (억원)": str(r.get("sales_eok") or ""),
+                                    "VM 통화": (r.get("vm_ccy") or "").upper() or "USD",
                                     "BA-CVA 업종": r["ba_cva_sector"]} for r in draft.values()]),
                      hide_index=True, width="stretch")
+        st.caption("RW 방식이 IRB인 행은 신용 위험가중치를 PD·매출로 계산하므로 표의 신용 위험가중치 칸은 비어 있습니다.")
         if ss.get("adm_m_pick") not in [NEW_ROW, *draft]:
             ss["adm_m_pick"] = NEW_ROW
         st.selectbox("수정·삭제할 상대방", [NEW_ROW, *draft], key="adm_m_pick", on_change=on_pick,
@@ -606,11 +634,18 @@ if admin:
         c1.text_input("이름", key="adm_m_name")
         c2.selectbox("등급", store.GRADES, key="adm_m_grade")
         c3.selectbox("CSA", store.CSA_KINDS, key="adm_m_csa")
-        c1.number_input("연 PD (%)", key="adm_m_pd", min_value=0.0, max_value=100.0, step=0.05, format="%.2f")
+        c1.number_input("연 PD (%)", key="adm_m_pd", min_value=0.0, max_value=100.0, step=0.01, format="%.4f")
         c2.number_input("신용 위험가중치 (%)", key="adm_m_rw", min_value=0.0, step=10.0,
+                        disabled=ss.get("adm_m_rwm") == "IRB",
                         help="표준방법. 예: 공공기관은 결손보전 기관 0%(별표3 32.가), 그 외 20~50%(32.나·다), "
                              "은행·동등 증권사 A등급 30%·BBB 50%, 기업 무등급 100%")
         c3.selectbox("BA-CVA 업종", list(BA_CVA_RW), key="adm_m_sector")
+        d1, d2, d3 = st.columns(3)
+        d1.selectbox("RW 방식", store.RW_METHODS, key="adm_m_rwm",
+                     help="고정: 위 신용 위험가중치 칸 값. IRB: 기본내부등급법으로 PD·매출에서 계산 (위 칸은 쓰지 않음)")
+        d2.text_input("매출 (억원, 빈 칸 가능)", key="adm_m_sales", help="IRB 중소기업 상관계수 조정에 쓴다. 천 단위 쉼표 가능")
+        d3.selectbox("VM 담보 통화", [VM_BLANK, *store.VM_CCYS], key="adm_m_vm",
+                     help="ISDA CSA 적격담보 통화. 빈 칸이면 USD (FVA 조달 스프레드 선택에 쓴다)")
         st.checkbox("딜러 라인 (헤지 딜러로 쓴다)", key="adm_m_dealer")
         b1, b2, b3, b4 = st.columns(4)
         b1.button("추가·수정", key="adm_m_apply", on_click=on_apply)

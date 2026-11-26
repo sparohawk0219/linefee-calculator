@@ -178,6 +178,39 @@ def test_master():
     check("이름 없는 행은 거부", any("이름" in e.value for e in at.error))
 
 
+def test_master_rename():
+    print("관리자: 이름 변경 시 열 승계, RW 방식·매출·VM 통화 입력 (L-053, L-057)")
+    new_app()   # 데이터 폴더를 비운다
+    seed = ("name,grade,pd_pct,csa,dealer_line,credit_rw_pct,ba_cva_sector,vm_ccy,rw_method,sales_eok,note\n"
+            "기업 I,투자등급,0.5,VM,N,0,기술·통신,,IRB,1200,비고I\n"
+            "딜러 K,투자등급,0.0,VM+IM,Y,20,금융기관(정부보증 금융 포함),KRW,고정,,\n")
+    (Path(DATA_DIR) / "counterparties.csv").write_text(seed, encoding="utf-8-sig")
+    at = AppTest.from_file(str(Path(__file__).resolve().parent.parent / "app.py"), default_timeout=600)
+    at.secrets["admin_password"] = ADMIN_PW
+    at = login(at.run())
+    at.selectbox(key="adm_m_pick").set_value("기업 I").run()
+    check("IRB 행을 고르면 RW 방식·매출이 채워진다", at.selectbox(key="adm_m_rwm").value == "IRB"
+          and at.text_input(key="adm_m_sales").value == "1200")
+    at.text_input(key="adm_m_name").set_value("기업 I2").run()
+    button(at, "추가·수정").click().run()
+    button(at, "저장").click().run()
+    rows = {r.split(",")[0]: r.split(",") for r in (Path(DATA_DIR) / "counterparties.csv").read_text(
+        encoding="utf-8-sig").splitlines()[1:]}
+    check("이름을 바꾸면 옛 행은 교체되고 새 행이 IRB·매출·비고를 이어받는다",
+          "기업 I" not in rows and rows["기업 I2"][8] == "IRB" and rows["기업 I2"][9] == "1200"
+          and rows["기업 I2"][-1] == "비고I")
+    at.selectbox(key="adm_m_pick").set_value("딜러 K").run()
+    check("KRW VM 딜러를 고르면 VM 통화가 채워진다", at.selectbox(key="adm_m_vm").value == "KRW")
+    at.selectbox(key="adm_m_pick").set_value("기업 I2").run()
+    at.text_input(key="adm_m_sales").set_value("abc").run()
+    button(at, "추가·수정").click().run()
+    check("매출이 숫자가 아니면 거부", any("매출" in e.value for e in at.error))
+    at.text_input(key="adm_m_sales").set_value("1200")
+    at.text_input(key="adm_m_name").set_value("딜러 K").run()
+    button(at, "추가·수정").click().run()
+    check("다른 행과 같은 이름으로 바꾸면 거부", any("이미 있습니다" in e.value for e in at.error))
+
+
 def test_validate_params():
     print("BankParams.problems (L-013)")
     check("기본값은 문제 없음", BankParams().problems() == [])
@@ -199,5 +232,6 @@ if __name__ == "__main__":
     test_roles()
     test_admin_save_changes_general()
     test_master()
+    test_master_rename()
     print("실패: " + (", ".join(FAILS) if FAILS else "없음"))
     sys.exit(1 if FAILS else 0)
