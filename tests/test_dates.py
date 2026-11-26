@@ -72,7 +72,26 @@ def test_krw_extra_holidays():
                                     for d in cv.KRW_EXTRA_HOLIDAYS), True)
 
 
+def test_weekly():
+    print("과거 추정 주간 시계열 (L-028): 금요일이 휴일이면 그 주 마지막 값, 모든 구간 1주")
+    from datetime import timedelta
+
+    import numpy as np
+
+    from linefee.market import friday_grid, weekly_last
+    days = [date(2026, 1, 5) + timedelta(days=i) for i in range(70) if (date(2026, 1, 5) + timedelta(days=i)).weekday() < 5]
+    a = {d: float(i) for i, d in enumerate(days)}
+    b = {d: v for d, v in a.items() if d != date(2026, 1, 30)}          # b만 금요일(1-30) 휴일
+    fr = friday_grid([a, b])
+    check("금요일 수 = 주 수 (휴일 금요일도 남는다)", len(fr), 10)
+    check("모든 간격 1주", {(y - x).days for x, y in zip(fr[:-1], fr[1:])}, {7})
+    vb = weekly_last(b, fr)
+    check("휴일 금요일은 그 주 목요일 값", vb[fr.index(date(2026, 1, 30))], a[date(2026, 1, 29)])
+    check("나머지 금요일은 그날 값", bool(np.all(weekly_last(a, fr) == [a[f] for f in fr])), True)
+
+
 if __name__ == "__main__":
+    test_weekly()
     test_years_ago()
     test_business_day()
     test_spot_date()

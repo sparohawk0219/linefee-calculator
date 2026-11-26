@@ -12,10 +12,11 @@
       현물 호가는 현물 결제일(T+2) 기준이고, 엔진은 이를 평가일 기준으로 바꾼
       값(spot = 호가 x DF_KRW(결제일) / DF_통화(결제일))을 쓴다. 선도 = spot x DF_통화(t) / DF_KRW(t)
 변동성: USDKRW·JPYKRW ATM 내재변동성 만기 구조, USDJPY는 두 환율 간 내재 상관 계산용
-과거 추정: 금리 10년 주간 변화(정규), 환율 로그 주간 변화. 5년, 금요일 기준
+과거 추정: 금리 10년 주간 변화(정규), 환율 로그 주간 변화. 5년, 금요일 기준 (금요일이 휴일이면 그 주의 마지막 값)
 """
 import json
 import os
+from bisect import bisect_right
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from pathlib import Path
@@ -157,8 +158,39 @@ def check_business_day(as_of: str, ccys=CURRENCIES) -> None:
 
 
 # ---------------------------------------------------------------------------
+# 주간 시계열 (과거 추정)
+# ---------------------------------------------------------------------------
+def friday_grid(series: list) -> list:
+    """모든 계열에 값이 있는 기간의 금요일 목록 (1주 간격). series: [{날짜: 값}, ...]."""
+    start = max(min(s) for s in series)
+    end = min(max(s) for s in series)
+    first = start + timedelta(days=(4 - start.weekday()) % 7)
+    out = []
+    while first <= end:
+        out.append(first)
+        first += timedelta(days=7)
+    return out
+
+
+def weekly_last(s: dict, fridays: list) -> np.ndarray:
+    """각 금요일까지(그 날 포함)의 마지막 값. 금요일이 휴일이면 그 주의 마지막 값, 그 주에 값이 없으면 직전 값 (L-028).
+
+    예전에는 한 계열이라도 값이 없는 금요일을 통째로 버려 그 구간이 2주 변화가 되었는데 sqrt(52)로 연율화해
+    변동성이 과대(2022~2026 스냅샷 약 +4%)였다. 모든 금요일을 남기면 모든 차분이 1주다.
+    """
+    days = sorted(s)
+    pos = [bisect_right(days, f) - 1 for f in fridays]
+    return np.array([s[days[i]] for i in pos])
+
+
+# ---------------------------------------------------------------------------
 # 블룸버그
 # ---------------------------------------------------------------------------
+def _day(d) -> date:
+    """블룸버그 날짜(datetime 또는 date) -> date."""
+    return d.date() if hasattr(d, "date") and callable(d.date) else d
+
+
 def fetch(years: int = 5, path: Path = SNAPSHOT) -> dict:
     """현재값과 과거 추정치를 받아 스냅샷으로 저장한다. 값이 없는 테너는 빠진다.
 
@@ -183,13 +215,12 @@ def fetch(years: int = 5, path: Path = SNAPSHOT) -> dict:
 
     end = date.today()
     start = years_ago(end, years)
-    series = {k: dict(bdh(t, "PX_LAST", start.strftime("%Y%m%d"), end.strftime("%Y%m%d")))
+    series = {k: {_day(d): v for d, v in bdh(t, "PX_LAST", start.strftime("%Y%m%d"), end.strftime("%Y%m%d"))}
               for k, t in HIST_TICKERS.items()}
-    days = sorted(set.intersection(*(set(v) for v in series.values())))
-    fridays = [d for d in days if d.weekday() == 4]
+    fridays = friday_grid(list(series.values()))   # 모든 금요일, 휴일이면 그 주 마지막 값 (L-028)
 
     def col(k):
-        return np.array([series[k][d] for d in fridays])
+        return weekly_last(series[k], fridays)
 
     levels = np.vstack([
         col("r_USD") / 100,
@@ -212,16 +243,17 @@ def fetch(years: int = 5, path: Path = SNAPSHOT) -> dict:
     kappa, kvols = {}, {}
     for f, group in KAPPA_TICKERS.items():
         try:
-            raw_k = {n: [dict(bdh(t, "PX_LAST", start.strftime("%Y%m%d"), end.strftime("%Y%m%d"))) for t in ts]
-                     for n, ts in group.items()}
+            raw_k = {n: [{_day(d): x for d, x in bdh(t, "PX_LAST", start.strftime("%Y%m%d"), end.strftime("%Y%m%d"))}
+                         for t in ts] for n, ts in group.items()}
         except Exception:
             continue
-        kdays = sorted(set.intersection(*(set(s) for v in raw_k.values() for s in v)))
-        kfri = [d for d in kdays if d.weekday() == 4]
-        if len(kfri) < 52 or any(not s for v in raw_k.values() for s in v):
+        if any(not one for v in raw_k.values() for one in v):
             continue
-        lv = {n: (np.array([v[0][d] for d in kfri]) + (np.array([v[1][d] for d in kfri]) / 100 if len(v) > 1 else 0))
-              / 100 for n, v in raw_k.items()}   # JPY: OIS(%) + 베이시스(bp)/100 -> %
+        kfri = friday_grid([one for v in raw_k.values() for one in v])
+        if len(kfri) < 52:
+            continue
+        lv = {n: (weekly_last(v[0], kfri) + (weekly_last(v[1], kfri) / 100 if len(v) > 1 else 0)) / 100
+              for n, v in raw_k.items()}   # JPY: OIS(%) + 베이시스(bp)/100 -> %
         kappa[f], kvols[f] = kappa_from_levels(lv)
     if kappa:
         snap["hist"]["kappa"] = kappa
