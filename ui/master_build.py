@@ -2,7 +2,7 @@
 
 규칙(PD 열 선택, 옛 등급 정정, 외부등급 RW, 32조 공공기관, 딜러·금융기관 CSA, 같은 법인 묶음, 업종 키워드, 꼬리표)은
 이 모듈에 있고, 이름별 표와 실데이터 입력 경로는 규칙 파일(JSON)에서 읽는다. 실데이터와 실제 규칙 파일은 로컬 전용이다.
-예시(가명) 규칙 파일: docs/master_rules.example.json
+예시(가명) 규칙 파일: tests/master_rules.example.json
 
 사용: python -m ui.master_build --rules local/data/master_rules.json --out <출력 csv>
       (--out을 생략하면 데이터 폴더의 counterparties.csv를 덮어쓴다)
@@ -196,7 +196,7 @@ def write_master(rows, out):
 
 def main():
     ap = argparse.ArgumentParser(description="규칙 파일로 상대방 마스터 생성")
-    ap.add_argument("--rules", required=True, help="규칙 JSON (예시: docs/master_rules.example.json)")
+    ap.add_argument("--rules", required=True, help="규칙 JSON (예시: tests/master_rules.example.json)")
     ap.add_argument("--root", help="규칙 파일 inputs 상대경로의 기준 폴더 (기본: 현재 폴더)")
     ap.add_argument("--out", help="출력 csv (기본: 데이터 폴더의 counterparties.csv)")
     a = ap.parse_args()

@@ -27,7 +27,7 @@ customers = [
     cust("5", "시험 레코드", "AA"), cust("6", "구 기업 사용X", "AA"), cust("7", "등급 없는 기업", ""),
     cust("8", "공공기관 A", "AA", "비외감"), cust("9", "공공기관 E", "AA3", "비외감"),
 ]
-rules = json.loads(Path("docs/master_rules.example.json").read_text(encoding="utf-8"))
+rules = json.loads(Path("tests/master_rules.example.json").read_text(encoding="utf-8"))
 rows, skipped, _ = mb.build(PD, dealers, fi, customers, rules)
 by = {r["name"]: r for r in rows}
 
