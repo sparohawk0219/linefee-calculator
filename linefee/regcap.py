@@ -220,12 +220,13 @@ def simm_im(trade: Trade, t: float, m: MarketData, version: str) -> float:
 
 
 def im_profile(trade: Trade, times: np.ndarray, m: MarketData, version: str) -> np.ndarray:
-    """시점별 IM. 연 단위(및 0, 만기 직전)로 계산하고 선형 보간한다."""
+    """시점별 IM. 시뮬레이션 노드마다 직접 계산한다 (마지막 지급 시점부터 0).
+
+    예전에는 연 단위 격자에서 구해 선형 보간했는데, 연 지급 거래는 지급일이 격자 바로 뒤라 격자 값이 모두 지급 직전
+    (남은 쿠폰 포함) IM이 되어 IM이 체계적으로 과대했다(지급 직후 계단 하락을 놓침, Run C L-038). 노드에서 직접 계산하면 보간 편향이 없다.
+    """
     end = m.end_time(trade)
-    grid = np.unique(np.concatenate([np.arange(0, end, 1.0), [max(end - 1e-6, 0.0)]]))
-    vals = np.array([simm_im(trade, t, m, version) for t in grid])
-    out = np.interp(times, grid, vals)
-    return np.where(times < end - 1e-9, out, 0.0)
+    return np.array([simm_im(trade, float(t), m, version) if t < end - 1e-9 else 0.0 for t in times])
 
 
 # ---------------------------------------------------------------------------
@@ -238,13 +239,15 @@ def ccp_im_profile(trade: Trade, times: np.ndarray, m: MarketData, sigma: float,
     sigma: 해당 통화 금리 평행이동 연 변동성 (정규, 과거 추정).
     PV01: 두 다리의 순 PV01. 현금흐름은 원금 제외, 오늘 커브의 선도로 평가하고(변동 다리는 다음 리셋일에
           명목 + 확정 쿠폰, 만기에 -명목으로 바꿔 놓음) 해당 다리 할인 커브 평행이동으로 계산한다.
-    실제 CCP 모형(과거 시나리오 VaR 등)의 근사이며 반기 간격으로 계산해 선형 보간한다.
+    실제 CCP 모형(과거 시나리오 VaR 등)의 근사이며 시뮬레이션 노드마다 직접 계산한다 (보간 편향 없음, im_profile과 같은 이유).
     """
     z = NormalDist().inv_cdf(conf)
     end = m.end_time(trade)
-    grid = np.unique(np.concatenate([np.arange(0, end, 0.5), [max(end - 1e-6, 0.0)]]))
     vals = []
-    for t in grid:
+    for t in times:
+        if t >= end - 1e-9:
+            vals.append(0.0)
+            continue
         dv = 0.0
         for leg in trade.legs:
             tau, amt = _flows_for_simm(leg, trade, t, m)
@@ -254,5 +257,4 @@ def ccp_im_profile(trade: Trade, times: np.ndarray, m: MarketData, sigma: float,
             pv = amt * disc.df(t + tau) / disc.df(t)
             dv += leg.sign * float(m.fwd_fx(leg.ccy, t)) * float(np.sum(tau * pv))
         vals.append(z * sigma * np.sqrt(mpor_days / 250) * abs(dv))
-    out = np.interp(times, grid, vals)
-    return np.where(times < end - 1e-9, out, 0.0)
+    return np.array(vals)
