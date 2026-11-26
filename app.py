@@ -475,6 +475,8 @@ with st.sidebar:
             st.warning(f"스냅샷에서 값을 받지 못한 티커 {len(m.missing)}개: {', '.join(m.missing)}")
     else:
         st.caption(f"시장 기준: {ss['market_src']} · 기준일 {m.as_of}")
+    for note in getattr(m, "notes", []):   # 읽을 때 대체한 값 (예: JPYKRW 호가가 없어 교차 환율, M20)
+        st.info(note)
     # 시장 데이터 새로 받기는 일반 사용자도 한다 (거래 때마다 최신 시장으로 계산). 기준 선택은 관리자만
     if st.button("블룸버그에서 새로 받기", key="fetch",
                  help="블룸버그 단말이 연결된 PC에서만 된다. 받은 뒤에는 계산을 다시 눌러야 새 시장으로 계산된다"):

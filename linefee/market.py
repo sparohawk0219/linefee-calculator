@@ -8,7 +8,8 @@
     KRW CD (원화 IRS, KRW 담보 단일 커브) CD 91일 + IRS 6개월~30년               KWCDC Index, KWSWO{F,I,1,1F,n}
     KRW (USD 담보 할인)                   USDKRW 스왑포인트 1주~12개월 + CCS 2~30년  KRW{1W,1M,...,12M}, KRWNSQ{n}
     JPY (USD 담보 할인)                   USDJPY 스왑포인트 1주~12개월 + TONA/SOFR 베이시스 2~30년  JPY{...}, JYBSS{n}Y
-환율: KRW 기준 1단위당 원화. 현물 호가는 현물 결제일(T+2) 기준이고, 엔진은 이를 평가일 기준으로 바꾼
+환율: KRW 기준 1단위당 원화. JPYKRW는 블룸버그 JPYKRW 호가 그대로 (DECISIONS M20, 없으면 USDKRW/USDJPY 교차로 대신하고 안내).
+      현물 호가는 현물 결제일(T+2) 기준이고, 엔진은 이를 평가일 기준으로 바꾼
       값(spot = 호가 x DF_KRW(결제일) / DF_통화(결제일))을 쓴다. 선도 = spot x DF_통화(t) / DF_KRW(t)
 변동성: USDKRW·JPYKRW ATM 내재변동성 만기 구조, USDJPY는 두 환율 간 내재 상관 계산용
 과거 추정: 금리 10년 주간 변화(정규), 환율 로그 주간 변화. 5년, 금요일 기준
@@ -183,6 +184,7 @@ class MarketData:
     quotes: dict = field(default_factory=dict, repr=False)   # 부트스트랩에 쓴 호가 (검증·표시용)
     missing: list = field(default_factory=list)   # 스냅샷을 받을 때 값이 없던 티커 (화면 표시용)
     short_end: bool = True     # 1년 미만 상품(스왑포인트, 단기 OIS, CD)이 커브에 들어갔는지
+    notes: list = field(default_factory=list)     # 읽을 때 대체한 값 등 화면 안내 (예: JPYKRW 호가 없음 -> 교차 환율)
 
     def disc_for(self, leg) -> Curve:
         """다리 할인 커브. leg.discount == "local"이면 자국 통화 담보 커브, 아니면 USD 담보 커브."""
@@ -224,6 +226,7 @@ class MarketData:
 
 
 OPTIONAL_GROUPS = ("fx_pts_USD", "fx_pts_JPY")   # 1년 미만 스왑포인트: 없으면 short_end=False 로 읽는다
+OPTIONAL_KEYS = {("spot", "JPY")}   # JPYKRW 호가: 없으면 USDKRW/USDJPY 교차 환율로 대신하고 MarketData.notes로 안내 (M20)
 
 
 RATE_GROUPS = ("usd_ois", "jpy_ois", "krw_irs", "krw_ccs")   # 호가 단위: % (4.37 = 4.37%)
@@ -242,7 +245,7 @@ def check_snapshot(snap: dict) -> None:
     현물·변동성은 0보다 큼. hist는 labels·sigma·corr가 있어야 한다 (L-026).
     """
     lost = [f"{key}.{n}" for key, group in TICKERS.items() if key not in OPTIONAL_GROUPS
-            for n in group if str(n) not in snap.get(key, {})]
+            for n in group if str(n) not in snap.get(key, {}) and (key, str(n)) not in OPTIONAL_KEYS]
     if lost:
         raise ValueError(f"스냅샷에 필수 호가가 없다 ({len(lost)}개): {', '.join(lost)}"
                          + (f". 받을 때 못 받은 티커: {', '.join(snap['missing'])}" if snap.get("missing") else ""))
@@ -251,7 +254,7 @@ def check_snapshot(snap: dict) -> None:
         vals = snap.get(key, {})
         for n in group:
             v = vals.get(str(n))
-            if v is None and key in OPTIONAL_GROUPS:
+            if v is None and (key in OPTIONAL_GROUPS or (key, str(n)) in OPTIONAL_KEYS):
                 continue
             if not _num(v):
                 bad.append(f"{key}.{n}={v!r}: 유한한 숫자가 아님")
@@ -310,7 +313,12 @@ def load(path: Path = SNAPSHOT) -> MarketData:
     usd, tona = Curve.from_ql(usd_q, "USD SOFR"), Curve.from_ql(tona_q, "JPY TONA")
     krw, jpy = Curve.from_ql(krw_q, "KRW (USD 담보)"), Curve.from_ql(jpy_q, "JPY (USD 담보)")
     cd = Curve.from_ql(cd_q, "KRW CD (원화 IRS)")
-    quote = {"KRW": 1.0, "USD": usdkrw, "JPY": usdkrw / usdjpy}   # JPYKRW는 교차 환율로 (커브와 일관)
+    # JPYKRW는 블룸버그 호가 그대로 (M20: USDKRW/USDJPY 삼각과 어긋나도 조치하지 않는다). 호가가 없을 때만 교차 환율
+    jpykrw, notes = snap["spot"].get("JPY"), []
+    if not _num(jpykrw):
+        jpykrw = usdkrw / usdjpy
+        notes.append(f"JPYKRW 호가가 스냅샷에 없어 USDKRW/USDJPY 교차 환율({jpykrw:,.4f})로 대신합니다.")
+    quote = {"KRW": 1.0, "USD": usdkrw, "JPY": jpykrw}
     return MarketData(
         as_of=snap["as_of"],
         spot={"KRW": 1.0, "USD": _today_spot(usdkrw, "USD", krw, usd, snap["as_of"]),
@@ -327,6 +335,7 @@ def load(path: Path = SNAPSHOT) -> MarketData:
                                      "fx_pts_USD", "fx_pts_JPY", "spot")},
         missing=list(snap.get("missing", [])),
         short_end=bool(snap.get("fx_pts_USD")),
+        notes=notes,
     )
 
 

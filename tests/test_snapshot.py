@@ -53,6 +53,8 @@ if __name__ == "__main__":
     check("hist 누락 -> 오류", raises(s, "hist"))
     s = full(); s["vol_USD"]["3"] = 0
     check("변동성 0 -> 오류", raises(s, "vol_USD.3"))
+    s = full(); del s["spot"]["JPY"]
+    check("spot.JPY(JPYKRW) 누락은 정상 (교차 환율로 대신, M20)", raises(s) is False)
     s = full(); s["fx_pts_USD"]["1W"] = -0.1
     check("스왑포인트 음수는 정상", raises(s) is False)
     try:
@@ -69,6 +71,18 @@ if __name__ == "__main__":
                 p.write_text(json.dumps(snap), encoding="utf-8")
                 m = load(p)
             check("스왑포인트 키가 파일에 없어도 load -> short_end=False", m.short_end is False)
+            snap = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
+            m = load(SNAPSHOT)
+            check("JPYKRW 현물은 스냅샷 호가 그대로 (M20, L-023)",
+                  m.spot_quote["JPY"] == snap["spot"]["JPY"] and not m.notes)
+            del snap["spot"]["JPY"]
+            with tempfile.TemporaryDirectory() as d:
+                p = Path(d) / "s.json"
+                p.write_text(json.dumps(snap), encoding="utf-8")
+                m = load(p)
+            check("JPYKRW 호가가 없으면 교차 환율로 대신하고 안내",
+                  abs(m.spot_quote["JPY"] - snap["spot"]["USD"] / snap["spot"]["USDJPY"]) < 1e-12
+                  and any("JPYKRW" in n for n in m.notes))
     except Exception as e:
         check(f"스왑포인트 키 없는 스냅샷 load ({type(e).__name__}: {e})", False)
     sys.exit(1 if FAILS else 0)

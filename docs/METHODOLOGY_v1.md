@@ -138,7 +138,7 @@ FX 선도 마진은 KRW 다리 금액을 `마진 x 외화 명목`만큼 은행�
 | KRW CD | CD 91일 추정 = 원화 IRS 할인(자국 담보, 단일 커브) | CD 91일(`KWCDC Index`), IRS 6·9개월, 1년, 18개월, 2~30년 (`KWSWOF,I,1,1F,n`) | T+1, 고정·변동 분기, ACT/365F, 서울 |
 | KRW (USD 담보) | KRW 할인 | 1년 이하: USDKRW 온쇼어 스왑포인트 1주~12개월(`KRW{n}M` = `KWO{n}M`, 블룸버그 증권 유형 "ONSHORE FORWARD". NDF는 `KWN`). 2년 이후: KRW 고정 vs SOFR CCS(`KRWNSQ{n}`) | 포인트: 현물(T+2)부터, 원 단위. CCS: KRW 분기 ACT/365F vs SOFR 복리 분기 ACT/360, 원금 교환, 서울·뉴욕 |
 | JPY (USD 담보) | JPY 할인 | 1년 이하: USDJPY 스왑포인트(`JPY{n}M`, /100). 2년 이후: TONA + 베이시스 vs SOFR(`JYBSS{n}Y`) | 분기 복리, 원금 교환, 도쿄·뉴욕 |
-| 현물 | | USDKRW, USDJPY (JPYKRW는 교차 환율로 계산해 커브와 일관되게) | 현물 결제일 T+2 |
+| 현물 | | USDKRW, USDJPY, JPYKRW 호가 그대로 (DECISIONS M20: JPYKRW 호가가 USDKRW/USDJPY 삼각과 어긋나도 조치하지 않는다. JPYKRW 호가가 스냅샷에 없을 때만 교차 환율로 대신하고 화면에 안내) | 현물 결제일 T+2 |
 | 환율 변동성 | | ATM 내재, 1·3·5·7·10년 (`USDKRWV{n}Y`, `JPYKRWV{n}Y`, `USDJPYV{n}Y`) | |
 | 과거 추정 | | 5년 금요일 주간 변화. 금리 10년(정규), 환율 로그. KRW IRS 10년은 변동성만 | `USOSFR10`, `KRWNSQ10`, `JYSO10`+`JYBSS10Y`, `KWSWO10` |
 
