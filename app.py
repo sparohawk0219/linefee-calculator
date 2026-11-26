@@ -926,6 +926,10 @@ if st.button("계산", type="primary"):
             if loc_key == "upfront":
                 be_running = breakeven(build_deal(client_trade, client, dealer, hedge=hedge_used,
                                                   fee_location="client", fee=0.0), m, params)
+        # 사후 검증용 기록 (L-092). 실패해도 계산은 막지 않는다
+        store.log_calculation(store.calc_record(
+            deal, base, be, params, dict(market_src=st.session_state["market_src"], as_of=m.as_of, hedge_kind=hedge_kind,
+                                         fee_location=loc_key, fee=fee_delta(client_trade, fee_in), upfront_krw=upfront * OKU)))
         st.session_state["result"] = dict(deal=deal, base=base, be=be, zero=zero, be_running=be_running,
                                           hedge_kind=hedge_kind, loc=loc_key, fee=fee_delta(client_trade, fee_in),
                                           upfront=upfront * OKU, unit_pv=fee_unit_pv(deal, m), is_fx=is_fx,

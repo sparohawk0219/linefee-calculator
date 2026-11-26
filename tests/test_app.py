@@ -151,6 +151,10 @@ def test_admin_save_changes_general():
     button(at, "저장").click().run()
     check("저장 성공 안내", any("저장했습니다" in s.value for s in at.success))
     check("bank_params.json이 생긴다", (Path(DATA_DIR) / "bank_params.json").exists())
+    plog = (Path(DATA_DIR) / "params_log.jsonl").read_text(encoding="utf-8")
+    check("변경 이력(params_log.jsonl)에 CET1 0.13 -> 0.14 (L-091)", '"capital_ratio": [0.13, 0.14]' in plog)
+    clog = Path(DATA_DIR) / "calc_log.jsonl"
+    check("계산할 때마다 calc_log.jsonl에 한 줄 (L-092)", clog.exists() and len(clog.read_text(encoding="utf-8").splitlines()) == 1)
     button(at, "로그아웃").click().run()
     r1 = calc(at)
     check("일반 화면의 params.capital_ratio가 저장한 값 (14%)", abs(r1["params"].capital_ratio - 0.14) < 1e-12)

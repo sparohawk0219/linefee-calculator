@@ -6,6 +6,7 @@
 Streamlit에 의존하지 않는다.
 """
 import csv
+import hashlib
 import json
 import math
 import os
@@ -47,6 +48,11 @@ def params_path() -> Path:
 def params_log_path() -> Path:
     """관리자 파라미터 변경 이력 (JSONL, 덧붙이기). 데이터 폴더라 gitignore다."""
     return data_dir() / "params_log.jsonl"
+
+
+def calc_log_path() -> Path:
+    """계산 기록 (JSONL, 덧붙이기). 데이터 폴더라 gitignore다."""
+    return data_dir() / "calc_log.jsonl"
 
 
 
@@ -242,3 +248,41 @@ def save_params(p: BankParams) -> None:
         _append_jsonl(params_log_path(), {"ts": datetime.now().isoformat(timespec="seconds"), "changes": changes})
     os.replace(tmp, path)
 
+
+# ---------------------------------------------------------------------------
+# 계산 기록 (사후 검증용, L-092)
+# ---------------------------------------------------------------------------
+def pseudonym(name: str) -> str:
+    """상대방 이름 -> 짧은 해시 키 (기록에 실명을 남기지 않는다)."""
+    return hashlib.sha1(name.encode("utf-8")).hexdigest()[:8]
+
+
+def calc_record(deal, run, be, params: BankParams, meta: dict) -> dict:
+    """계산 1회의 기록 (입력 요약, 파라미터, 주요 결과). 상대방은 가명 키와 조건(등급 대신 CSA·RW·PD)만 남긴다.
+
+    deal: 거래 묶음(client_trade, client, dealer), run: 기본 계산 결과, be: 손익분기, meta: 화면 쪽 입력(시장·라인피 등).
+    """
+    def cp(c):
+        return {"key": pseudonym(c.name), "csa": [c.csa.vm, c.csa.im, c.csa.ccy], "credit_rw": c.credit_rw,
+                "cva_rw": c.cva_rw, "pd": c.pd, "lgd": c.lgd, "irb": c.irb}
+
+    ct = deal.client_trade
+    return {
+        "input": {"product": ct.product, "maturity": ct.maturity,
+                  "legs": [{"ccy": l.ccy, "notional": l.notional, "direction": l.direction, "kind": l.kind,
+                            "rate": l.rate, "freq": l.freq} for l in ct.legs],
+                  "client": cp(deal.client), "dealer": cp(deal.dealer), **meta},
+        "params": asdict(params),
+        "result": {"net_krw": run.net, "net_se_krw": run.net_se, "day1_krw": run.day1, "accounting_net_krw": run.accounting_net,
+                   "costs_krw": dict(run.costs), "breakeven_extra": be.extra if be is not None else None,
+                   "breakeven_hurdle": run.breakeven_hurdle(), "kappa": run.kappa},
+    }
+
+
+def log_calculation(rec: dict) -> bool:
+    """계산 기록 한 줄을 calc_log.jsonl에 덧붙인다. 실패해도 계산을 막지 않고 False를 돌려준다."""
+    try:
+        _append_jsonl(calc_log_path(), {"ts": datetime.now().isoformat(timespec="seconds"), **rec})
+        return True
+    except (OSError, TypeError, ValueError):
+        return False

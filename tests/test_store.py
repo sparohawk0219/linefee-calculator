@@ -89,4 +89,27 @@ if __name__ == "__main__":
     store.save_params(BankParams())
     last = _json.loads(lp.read_text(encoding="utf-8").splitlines()[-1])["changes"]
     check("되돌리면 12% -> 10%도 기록", last["hurdle_after_tax"] == [0.12, 0.1])
+    print("계산 기록 (L-092)")
+    from types import SimpleNamespace as NS
+    from linefee.trade import CSA, Counterparty, Leg, Trade
+    cl = Counterparty("가명 고객 Z", 0.5, 0.05, 0.002)
+    dl = Counterparty("가명 딜러 Y", 0.2, 0.05, 0.0003, csa=CSA(vm=True, im=True))
+    deal = NS(client_trade=Trade([Leg("USD", 1e9, "receive", "fixed", 0.04), Leg("KRW", 1.4e12, "pay", "float", 0.001)], 5.0, "CCS"),
+              client=cl, dealer=dl)
+    run = NS(net=-1e8, net_se=1e6, day1=3e8, accounting_net=2e8, costs={"CVA": 1e8}, kappa={"KRW": 0.02},
+             breakeven_hurdle=lambda: 0.08)
+    rec = store.calc_record(deal, run, NS(extra=0.0003), BankParams(), dict(market_src="x", fee=0.001))
+    check("기록에 실명 없음, 가명 키만", "가명 고객 Z" not in _json.dumps(rec, ensure_ascii=False)
+          and rec["input"]["client"]["key"] == store.pseudonym("가명 고객 Z"))
+    check("입력·파라미터·결과 포함", rec["input"]["maturity"] == 5.0 and rec["params"]["n_paths"] == 10000
+          and rec["result"]["breakeven_extra"] == 0.0003 and rec["result"]["costs_krw"] == {"CVA": 1e8})
+    cp_ = store.calc_log_path()
+    check("기록 성공", store.log_calculation(rec) and store.log_calculation(rec))
+    got = [_json.loads(x) for x in cp_.read_text(encoding="utf-8").splitlines()]
+    check("두 줄 덧붙임, 시각 포함", len(got) == 2 and "ts" in got[0] and got[0]["result"]["net_krw"] == -1e8)
+    cp_.unlink()
+    cp_.mkdir()   # 파일 자리에 폴더 -> 쓰기 실패
+    check("기록 실패해도 예외 없이 False", store.log_calculation(rec) is False)
+    cp_.rmdir()
+    check("직렬화 못 하는 값도 False", store.log_calculation({"x": object()}) is False)
     sys.exit(1 if FAILS else 0)
