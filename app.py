@@ -1004,7 +1004,8 @@ if res:
     st.markdown(f"**손익분기 라인피** (세후 요구수익률 {rp.hurdle_after_tax:.1%}, 자본비용 반영 손익 = 0, "
                 f"표준오차 ±{fmt(be.extra_se)})")
     if not be.converged:
-        st.warning(f"손익분기 반복이 허용오차(0.01억) 안으로 수렴하지 않았습니다. 마지막 순마진 "
+        st.warning(f"손익분기 반복이 허용오차({'0.0001원' if fx_mode else '0.001bp'} = {be.tol_krw / OKU:,.4f}억) 안으로 "
+                   "수렴하지 않았습니다. 마지막 순마진 "
                    f"{be.runs[-1][1].net / OKU:+,.3f}억. 아래 '손익분기 반복 기록'을 확인하세요.")
     q = st.columns(3)
     gap_txt = lambda extra: f"{fmt(abs(extra))} {'부족' if extra > 0 else '여유'}"

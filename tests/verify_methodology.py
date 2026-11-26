@@ -120,6 +120,15 @@ def equiv():
     C.near("미러+라인피와 직접 입력의 첫날 이익 동치", r1.day1 / OKU, r2.day1 / OKU, 1e-6)
     C.near("미러+라인피와 직접 입력의 순마진 동치", r1.net / OKU, r2.net / OKU, 1e-6)
     expect("equiv 순마진 (5,000경로)", r1.net / OKU)
+    # 손익분기 bp는 명목과 무관해야 한다 (비용이 명목에 선형). 멈춤 기준이 절대 금액이면 작은 명목에서 첫 추정에 멈춘다 (L-030)
+    small = replace(d1, client_trade=replace(d1.client_trade, legs=[replace(l, notional=l.notional / 1000)
+                                                                     for l in d1.client_trade.legs]),
+                    hedge_trade=replace(d1.hedge_trade, legs=[replace(l, notional=l.notional / 1000)
+                                                               for l in d1.hedge_trade.legs]))
+    be_big, be_small = breakeven(d1, m, p, base=r1), breakeven(small, m, p)
+    print(f"  손익분기 bp: 100억엔 {be_big.extra_bp_pa:+.4f}, 1천만엔 {be_small.extra_bp_pa:+.4f} "
+          f"(계산 {len(be_big.runs)}번 / {len(be_small.runs)}번)")
+    C.near("손익분기 bp가 명목과 무관 (100억엔 vs 1천만엔)", be_small.extra_bp_pa, be_big.extra_bp_pa, 0.002)
 
 
 def usdkrw_client(m, years=5.0):

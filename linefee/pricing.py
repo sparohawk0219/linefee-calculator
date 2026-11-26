@@ -358,6 +358,18 @@ def fee_unit_pv(deal: Deal, m: MarketData) -> float:
 solve_leg_annuity = fee_unit_pv   # 이전 이름
 
 
+# 손익분기 반복의 멈춤 기준: 남은 순마진이 조정 단위 가치의 이 비율 이하 (명목·만기와 무관하게 같은 정밀도. L-030)
+BE_TOL_RATE = 1e-7     # 통화스왑·IRS: 0.001bp (연 소수) x 연금
+BE_TOL_FX = 1e-4       # FX 선도: 0.0001원/외화 1단위 x 외화 명목 x DF
+
+
+def breakeven_tol(deal: Deal, m: MarketData) -> float:
+    """손익분기 허용오차 (원) = 조정 단위 가치 x (0.001bp 또는 0.0001원)."""
+    side, _ = _solve_leg(deal)
+    tr = deal.hedge_trade if side == "hedge" else deal.client_trade
+    return abs(fee_unit_pv(deal, m)) * (BE_TOL_FX if tr.product == "FXFWD" else BE_TOL_RATE)
+
+
 @dataclass
 class Breakeven:
     extra: float                # 조정 다리에 추가로 필요한 폭 (Trade.favoured 단위, 음수 = 여유)
@@ -365,6 +377,7 @@ class Breakeven:
     unit_pv_krw: float          # 조정 단위 1의 원화 현재가치
     runs: list                  # (delta, Run) 반복 기록
     converged: bool = True      # 마지막 순마진이 허용오차 이내인지
+    tol_krw: float = 0.0        # 쓴 허용오차 (원, breakeven_tol)
 
     @property
     def extra_bp_pa(self) -> float:
@@ -378,14 +391,18 @@ class Breakeven:
 
 
 def breakeven(deal: Deal, m: MarketData, p: BankParams, base: Run | None = None,
-              tol_krw: float = 1e6, max_iter: int = 6) -> Breakeven:
+              tol_krw: float | None = None, max_iter: int = 6) -> Breakeven:
     """순마진 = 0이 되는 조정폭. 조정이 익스포저를 바꾸므로 같은 난수로 다시 계산하며 할선법으로 찾는다.
 
     첫 추정은 부족분 / 단위 가치, 이후 할선법을 최대 max_iter번 (전체 계산은 최대 max_iter + 2번).
+    멈춤 기준 tol_krw: 주지 않으면 breakeven_tol (조정 단위 가치 x 0.001bp, FX 선도 0.0001원). 명목이 작아도
+    첫 선형 추정(라인피가 익스포저를 바꾸는 효과를 뺀 값)에서 멈추지 않는다.
     upfront 환산: upfront는 익스포저를 바꾸지 않으므로 지금 조건의 부족분(-순마진) 그대로.
     """
     base = base or run(deal, m, p)
     unit = fee_unit_pv(deal, m)
+    if tol_krw is None:
+        tol_krw = breakeven_tol(deal, m)
     runs = [(0.0, base)]
     d1 = -base.net / unit
     runs.append((d1, run(bump(deal, d1), m, p)))
@@ -396,7 +413,7 @@ def breakeven(deal: Deal, m: MarketData, p: BankParams, base: Run | None = None,
         dc = db - rb.net * (db - da) / (rb.net - ra.net)
         runs.append((dc, run(bump(deal, dc), m, p)))
     return Breakeven(extra=runs[-1][0], extra_upfront_krw=-base.net, unit_pv_krw=unit, runs=runs,
-                     converged=abs(runs[-1][1].net) < tol_krw)
+                     converged=abs(runs[-1][1].net) < tol_krw, tol_krw=tol_krw)
 
 
 def annual_pnl(r: Run) -> list[dict]:
