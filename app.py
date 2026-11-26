@@ -766,6 +766,9 @@ def validate() -> list[str]:
     if dealer is None:
         errs.append("헤지 딜러를 고르지 않았습니다. '2. 상대방'에서 거래의 헤지 딜러를 고르세요")
     trades = [client_trade] + ([hedge_trade] if hedge_trade else [])
+    if hedge_trade and (hedge_trade.currencies != client_trade.currencies or hedge_trade.product != client_trade.product):
+        errs.append("직접 입력 헤지의 상품·통화 쌍이 고객 거래와 다름: 같은 상품, 같은 두 통화여야 헤지가 고객 위험을 상쇄함 "
+                    f"(고객 {'/'.join(sorted(client_trade.currencies))}, 헤지 {'/'.join(sorted(hedge_trade.currencies))})")
     for tr in trades:
         if tr.product != "IRS" and tr.legs[0].ccy == tr.legs[1].ccy:
             errs.append("통화스왑·FX 선도는 두 다리 통화가 달라야 함")
