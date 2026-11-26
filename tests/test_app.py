@@ -82,10 +82,14 @@ def test_param_ranges():
     check("세율 min 0, max 100 미만", tax.min == 0.0 and tax.max is not None and tax.max < 100.0)
     for label in ("CET1 목표비율 (%)", "세후 요구수익률 (%)", "BA-CVA 한계계수", "금리 변동성 배수"):
         check(f"{label} min 0", num(at, label).min == 0.0)
-    check("금리 평균회귀(kappa)는 min 없음 (음수 허용, L-010)", num(at, "금리 평균회귀 (연)").min is None)
     check("기본값 유지 (세율 27.5, CET1 13, 요구수익률 10, 한계계수 0.5, 배수 1)",
           (tax.value, num(at, "CET1 목표비율 (%)").value, num(at, "세후 요구수익률 (%)").value,
            num(at, "BA-CVA 한계계수").value, num(at, "금리 변동성 배수").value) == (27.5, 13.0, 10.0, 0.5, 1.0))
+    auto = next(c for c in at.checkbox if c.key == "adm_kappa_auto")
+    check("금리 평균회귀 기본은 과거 추정값 사용 (M26, L-078)", auto.value is True
+          and not any(n.key == "adm_kappa" for n in at.number_input))
+    auto.uncheck().run()
+    check("직접 입력 kappa는 min 없음 (음수 허용, L-010)", num(at, "금리 평균회귀 (연, 모든 통화)").min is None)
 
 
 def test_product_roundtrip():
