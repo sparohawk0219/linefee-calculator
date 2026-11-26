@@ -5,7 +5,8 @@
           P_c(t,T) = P_c(0,T)/P_c(0,t) x exp(-B(T-t) x_c(t) - B(T-t)^2 Var[x_c(t)] / 2)
           B(tau) = (1 - e^{-kappa tau}) / kappa  (kappa = 0이면 tau)
           → 경로 평균 할인계수 = 오늘의 선도 할인계수
-    환율: X_c(t) = F_c(t) x exp(W_c(t) - V_c(t)/2), F_c = 선도, V_c(t) = (만기 t 내재변동성)^2 x t
+    환율: X_c(t) = F_c(t) x exp(W_c(t) - V_c(t)/2), F_c = 선도, V_c(t) = max_{s<=t} (만기 s 내재변동성)^2 x s
+          (총분산이 줄어드는 구간은 증분 0. 증분과 드리프트가 같은 V를 써 E[X] = F)
 상관: 과거 5년 주간 추정. 단 USDKRW-JPYKRW 상관은 USDJPY 내재변동성에서 역산한 값.
       바꾼 행렬이 양정치가 아니면 고유값을 잘라 가장 가까운 상관행렬로 고친다.
 외화 금리 요인에는 quanto 드리프트를 넣는다: x_c(t)에서 Cov(W_c(t), x_c(t))를 뺀다(이산 격자에서 정확히).
@@ -86,6 +87,16 @@ def _ou(z: np.ndarray, sigma: float, kappa: float, dt: float) -> tuple[np.ndarra
     return x, var
 
 
+def fx_total_variance(m: MarketData, ccy: str, times: np.ndarray) -> np.ndarray:
+    """시점별 환율 로그 총분산 V(t) = max_{s <= t} sigma(s)^2 s. 경로의 분산 증분과 드리프트가 모두 이 값을 쓴다.
+
+    내재변동성 기간구조가 가파르게 역전되면 sigma(t)^2 t가 줄어드는 구간이 생긴다. 분산은 줄 수 없으므로 그 구간은 증분 0
+    (앞선 최댓값 유지)으로 두고, 드리프트 -V/2도 같은 V로 맞춰 E[X(t)] = F(t)를 지킨다 (L-033). 총분산이 늘기만 하면 그대로다.
+    """
+    tv = np.array([m.term_vol(ccy, max(t, 1e-6)) ** 2 * t for t in times])
+    return np.maximum.accumulate(tv)
+
+
 def simulate(m: MarketData, ccys: set, horizon: float, p: BankParams, local: bool = False) -> Scenario:
     """0 ~ horizon을 같은 간격으로 나눈다. 간격은 dt 이하, 구간 수는 min_steps 이상.
 
@@ -112,8 +123,8 @@ def simulate(m: MarketData, ccys: set, horizon: float, p: BankParams, local: boo
         if kind == "r":
             x[c], var[c] = _ou(z[:, :, k], sigma[c], p.rate_mean_reversion, dt)
         else:
-            tv = np.array([m.term_vol(c, max(t, 1e-6)) ** 2 * t for t in times])
-            sd = np.sqrt(np.maximum(np.diff(tv), 0.0))
+            tv = fx_total_variance(m, c, times)
+            sd = np.sqrt(np.diff(tv))
             fx_sd[c] = sd
             w = np.hstack([np.zeros((n_paths, 1)), np.cumsum(z[:, :, k] * sd, axis=1)])
             fx[c] = m.fwd_fx(c, times)[None, :] * np.exp(w - 0.5 * tv[None, :])
