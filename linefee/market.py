@@ -226,13 +226,50 @@ class MarketData:
 OPTIONAL_GROUPS = ("fx_pts_USD", "fx_pts_JPY")   # 1년 미만 스왑포인트: 없으면 short_end=False 로 읽는다
 
 
+RATE_GROUPS = ("usd_ois", "jpy_ois", "krw_irs", "krw_ccs")   # 호가 단위: % (4.37 = 4.37%)
+HIST_KEYS = ("labels", "sigma", "corr")
+
+
+def _num(v) -> bool:
+    """유한한 실수인가 (None·문자열·bool·NaN·inf 제외)."""
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and bool(np.isfinite(v))
+
+
 def check_snapshot(snap: dict) -> None:
-    """필수 키·테너(TICKERS 기준)가 모두 있는지 본다. 빠진 것을 전부 모아 한 번에 알린다."""
+    """필수 키·테너(TICKERS 기준)가 모두 있고 값이 쓸 수 있는지 본다. 문제를 전부 모아 한 번에 알린다.
+
+    값 검사: 모든 호가는 유한한 숫자, 금리(%)는 -1~25(전 테너가 0.1 미만이면 소수 단위로 본다), 베이시스(bp)는 +-300 이내,
+    현물·변동성은 0보다 큼. hist는 labels·sigma·corr가 있어야 한다 (L-026).
+    """
     lost = [f"{key}.{n}" for key, group in TICKERS.items() if key not in OPTIONAL_GROUPS
             for n in group if str(n) not in snap.get(key, {})]
     if lost:
         raise ValueError(f"스냅샷에 필수 호가가 없다 ({len(lost)}개): {', '.join(lost)}"
                          + (f". 받을 때 못 받은 티커: {', '.join(snap['missing'])}" if snap.get("missing") else ""))
+    bad = []
+    for key, group in TICKERS.items():
+        vals = snap.get(key, {})
+        for n in group:
+            v = vals.get(str(n))
+            if v is None and key in OPTIONAL_GROUPS:
+                continue
+            if not _num(v):
+                bad.append(f"{key}.{n}={v!r}: 유한한 숫자가 아님")
+            elif key in RATE_GROUPS and not -1.0 <= v <= 25.0:
+                bad.append(f"{key}.{n}={v}: 금리(%)는 -1~25")
+            elif key == "jpy_basis_bp" and abs(v) > 300:
+                bad.append(f"{key}.{n}={v}: 베이시스(bp)는 +-300 이내")
+            elif (key == "spot" or key.startswith("vol_")) and v <= 0:
+                bad.append(f"{key}.{n}={v}: 0보다 커야 함")
+    for key in RATE_GROUPS:
+        v = [x for x in snap.get(key, {}).values() if _num(x)]
+        if len(v) >= 3 and max(abs(x) for x in v) < 0.1:
+            bad.append(f"{key}: 모든 금리가 0.1 미만 (호가 단위는 %, 소수(0.0437)로 넣지 않았는지 확인)")
+    hist = snap.get("hist")
+    if not isinstance(hist, dict) or any(k not in hist for k in HIST_KEYS):
+        bad.append(f"hist: {', '.join(HIST_KEYS)}가 있어야 함 (변동성·상관 자료)")
+    if bad:
+        raise ValueError(f"스냅샷 값에 문제가 있다 ({len(bad)}개): " + "; ".join(bad[:12]) + (" ..." if len(bad) > 12 else ""))
 
 
 def _by_int(d: dict) -> dict:
@@ -286,7 +323,7 @@ def load(path: Path = SNAPSHOT) -> MarketData:
         usdjpy_vol={k: v / 100 for k, v in _by_int(snap["vol_USDJPY"]).items()},
         hist=snap.get("hist", {}),
         source=f"{path.name} ({snap['as_of']})",
-        quotes={k: snap[k] for k in ("usd_ois", "jpy_ois", "krw_irs", "krw_ccs", "jpy_basis_bp",
+        quotes={k: snap.get(k, {}) for k in ("usd_ois", "jpy_ois", "krw_irs", "krw_ccs", "jpy_basis_bp",
                                      "fx_pts_USD", "fx_pts_JPY", "spot")},
         missing=list(snap.get("missing", [])),
         short_end=bool(snap.get("fx_pts_USD")),
