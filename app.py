@@ -156,6 +156,12 @@ def load_preset():
     ss = st.session_state
     name = ss["preset"]
     m = get_market(MARKETS[ss["market_src"]])
+    if name.startswith(("USD/KRW", "달러 OIS")) and "USD" not in m.spot:   # 엔/원 검토 기준 스냅샷에는 USD가 없다 (L-059)
+        ss["_preset_msg"] = (f"'{name}'은(는) 선택한 시장 기준({ss['market_src']})에 USD 자료가 없어 불러올 수 없습니다. "
+                             "입력은 그대로 두고 이전 예시 선택으로 되돌렸습니다. 최신 시장 기준으로 바꾸면 쓸 수 있습니다.")
+        ss["preset"] = ss.get("_last_preset", PRESETS[0])
+        return
+    ss["_last_preset"] = name
     ss["upfront_oku"] = 0.0
     ss.pop("_preset_unmatched", None)
     if name == "엔/원 30년 CCS (공공기관 A 중개)":
@@ -691,6 +697,8 @@ if bad_rows:
     st.warning("거래상대방 마스터에서 읽지 못한 행이 있습니다: " + "; ".join(bad_rows))
 
 st.selectbox("예시 불러오기", PRESETS, key="preset", on_change=load_preset)
+if "_preset_msg" in ss:
+    st.warning(ss.pop("_preset_msg"))
 
 st.subheader("1. 고객 거래 (은행 기준)")
 c1, c2 = st.columns([1, 3])
