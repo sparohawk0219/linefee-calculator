@@ -3,8 +3,8 @@
 30년 JPY/KRW 고정-고정 CCS 백투백 중개의 라인 피(XVA) 계산.
 
 구조
-    HF  <-- (귀사: KRW 수취, JPY 지급) -->  귀사  <-- (반대) -->  딜러 B
-    - HF: CSA 없음, break 없음, 자본 부과 없음, 귀사가 받는 수수료 없음
+    공공기관 A  <-- (귀사: KRW 수취, JPY 지급) -->  귀사  <-- (반대) -->  딜러 B
+    - 공공기관 A: CSA 없음, break 없음, 자본 부과 없음, 귀사가 받는 수수료 없음
     - 딜러 B: CSA 있음(threshold 0, 정산 지연 없음), 30년 bullet 또는 10년 mutual break,
               귀사에 upfront 지급 (이 거래의 수익원)
 
@@ -79,9 +79,9 @@ def remaining_leg_pv(t: float, curve, coupon: float, maturity: int) -> float:
 @dataclass
 class Exposure:
     times: np.ndarray        # 시간 격자
-    value_vs_hf: np.ndarray  # (경로 x 시점) 귀사 입장에서 본 HF 거래의 가치
-    epe_hf: np.ndarray       # HF가 귀사에 갚을 돈의 기대값 (익스포저)
-    ene_hf: np.ndarray       # 귀사가 HF에 갚을 돈의 기대값 (음수)
+    value_vs_hf: np.ndarray  # (경로 x 시점) 귀사 입장에서 본 공공기관 A 거래의 가치
+    epe_hf: np.ndarray       # 공공기관 A가 귀사에 갚을 돈의 기대값 (익스포저)
+    ene_hf: np.ndarray       # 귀사가 공공기관 A에 갚을 돈의 기대값 (음수)
     vm_posted: np.ndarray    # 귀사가 딜러 B에 낼 VM 기대값 (딜러 B 거래 기준)
     vm_received: np.ndarray  # 딜러 B에서 받을 VM 기대값 (양수)
     fwd_fx: np.ndarray       # 선도환율 / 현물환율
@@ -173,11 +173,11 @@ def simulate_exposure(a: Assumptions) -> Exposure:
         _leg_pv_paths(t, a.market.jpy, c_jpy, a.maturity_years, x_j[:, i], var_j[i], kappa)
         for i, t in enumerate(times)])
 
-    # 귀사 vs HF: 기본은 KRW 다리를 받고 JPY 다리를 준다. hf_reverse면 반대
+    # 귀사 vs 공공기관 A: 기본은 KRW 다리를 받고 JPY 다리를 준다. hf_reverse면 반대
     sign = -1.0 if a.hf_reverse else 1.0
     value_vs_hf = sign * (krw_leg - fx * jpy_leg)
     positive = np.maximum(value_vs_hf, 0)
-    # 딜러 B 거래는 공사 거래의 반대이고 원화 쿠폰만 수수료만큼 낮다. 딜러 B 시가가 양수면 귀사가 VM을 낸다
+    # 딜러 B 거래는 공공기관 A 거래의 반대이고 원화 쿠폰만 수수료만큼 낮다. 딜러 B 시가가 양수면 귀사가 VM을 낸다
     dealer_b_mtm = sign * (krw_leg_dealer_b - fx * jpy_leg)
 
     # 딜러 B와는 정반대 거래이고 CSA로 MTM만큼 담보가 오가므로,
@@ -218,8 +218,8 @@ def cva(a: Assumptions, times: np.ndarray, epe: np.ndarray, cds: float) -> float
 def funding_cost(a: Assumptions, ex: Exposure) -> tuple[float, float]:
     """(FCA, FBA). 딜러 B CSA 담보는 USD 현금.
 
-    HF가 귀사에 빚진 상태(EPE_hf)면 귀사는 딜러 B에 같은 금액을 USD 현금으로 내야 하는데
-    HF에서는 담보를 받지 못하므로 그만큼 USD를 조달해야 한다 → FCA.
+    공공기관 A가 귀사에 빚진 상태(EPE_hf)면 귀사는 딜러 B에 같은 금액을 USD 현금으로 내야 하는데
+    공공기관 A에서는 담보를 받지 못하므로 그만큼 USD를 조달해야 한다 → FCA.
     반대로 딜러 B에서 받은 USD 현금으로 다른 USD 조달을 대체하면 이익이 생긴다 → FBA.
     """
     t = ex.times[1:]
@@ -297,7 +297,7 @@ def capital_profile(a: Assumptions, ex: Exposure) -> CapitalProfile:
     remaining = a.maturity_years - ex.times
     addon = sa_ccr_addon(remaining, a.sa_ccr_ccs_treatment)
 
-    # HF: 무담보 → maturity factor 1, RC는 경로별 max(V,0)의 기대값(EPE)으로 근사
+    # 공공기관 A: 무담보 → maturity factor 1, RC는 경로별 max(V,0)의 기대값(EPE)으로 근사
     ead_hf = 1.4 * (ex.epe_hf + addon)
     # 딜러 B: 증거금부 → maturity factor 1.5 x sqrt(MPOR/250). 실제 정산 지연이 없어도
     # 규제상 MPOR 하한(10영업일)이 적용된다.
@@ -460,11 +460,11 @@ def breakeven_replacement_payment_bp(a: Assumptions) -> float:
 
 
 # ---------------------------------------------------------------------------
-# 5. 전체 합산: HF 라인 피와 딜러 B 헤지 비용을 나눠서 본다
+# 5. 전체 합산: 공공기관 A 라인 피와 딜러 B 헤지 비용을 나눠서 본다
 # ---------------------------------------------------------------------------
 @dataclass
 class LineFeeResult:
-    line_fee_items: list[tuple[str, float]]   # HF 신용 사용에 대한 대가
+    line_fee_items: list[tuple[str, float]]   # 공공기관 A 신용 사용에 대한 대가
     hedge_cost_items: list[tuple[str, float]]  # 딜러 B와 헤지하면서 생기는 비용
     fee_income: float                          # 수수료 수입 현재가치 (running: 공공기관 A 쿠폰 가산분)
     fca: float
@@ -483,7 +483,7 @@ class LineFeeResult:
 
     @property
     def total(self) -> float:
-        """귀사 비용 합계 (HF 신용 + 딜러 B 헤지)."""
+        """귀사 비용 합계 (공공기관 A 신용 + 딜러 B 헤지)."""
         return self.line_fee + self.hedge_cost
 
     @property
@@ -501,9 +501,9 @@ def compute_line_fee(a: Assumptions) -> LineFeeResult:
     fca, fba = funding_cost(a, ex)
 
     line_fee_items = [
-        ("HF CVA (회계상)", cva(a, ex.times, ex.epe_hf, a.cds_hf) if a.include_hf_cva else 0.0),
-        ("HF 신용위험 자본 (KVA)", kva(a, ex.times, cap.k_ccr_hf)),
-        ("HF CVA 자본 (KVA)", kva(a, ex.times, cap.k_cva_hf)),
+        ("공공기관 A CVA (회계상)", cva(a, ex.times, ex.epe_hf, a.cds_hf) if a.include_hf_cva else 0.0),
+        ("공공기관 A 신용위험 자본 (KVA)", kva(a, ex.times, cap.k_ccr_hf)),
+        ("공공기관 A CVA 자본 (KVA)", kva(a, ex.times, cap.k_cva_hf)),
     ]
     net_funding = fca - fba if a.recognise_fba else fca
     hedge_cost_items = [

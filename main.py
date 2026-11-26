@@ -5,8 +5,8 @@
     python main.py
 
 가정은 assumptions.py에서 바꾼다. 항목별로 나눠서 출력한다.
-    1. HF 익스포저와 PFE (라인 사용량)
-    2. HF 신용 비용 (HF에서는 받는 것 없음)
+    1. 공공기관 A 익스포저와 PFE (라인 사용량)
+    2. 공공기관 A 신용 비용 (공공기관 A에서는 받는 것 없음)
     3. 딜러 B 헤지 비용
     4. 담보 유동성
     5. 손익: 딜러 B upfront - 비용
@@ -41,7 +41,7 @@ def print_pfe(a: Assumptions, r: LineFeeResult) -> None:
     ex = r.exposure
     n = a.notional_krw_oku
     q_lo, q_hi = a.pfe_quantiles
-    section("1. HF 익스포저와 PFE (명목 대비 / 억원)")
+    section("1. 공공기관 A 익스포저와 PFE (명목 대비 / 억원)")
     print(f"{'시점':>5}{'EE':>16}{f'PFE {q_lo:.0%}':>18}{f'PFE {q_hi:.0%}':>18}")
     for year in (1, 3, 5, 10, 15, 20, 25, 29):
         i = int(round(year / a.dt))
@@ -179,8 +179,8 @@ def main() -> None:
 
     print_pfe(base, r)
 
-    section("2. HF 신용 비용 (HF에서는 받는 것 없음)")
-    print_items(base, r, r.line_fee_items, "HF 신용 비용 소계")
+    section("2. 공공기관 A 신용 비용 (공공기관 A에서는 받는 것 없음)")
+    print_items(base, r, r.line_fee_items, "공공기관 A 신용 비용 소계")
 
     section("3. 딜러 B 헤지 비용 (중개하면서 귀사가 떠안는 비용)")
     print_items(base, r, r.hedge_cost_items, "헤지 비용 소계")
@@ -205,8 +205,8 @@ def main() -> None:
         "참고: 딜러 B upfront 220bp 구조": replace(base, fee_structure="upfront"),
         "KVA: 요구수익률 전액, 조달이익 없음": replace(base, kva_method="gross"),
         "KVA: 첫날 이익 자본 적립 미반영": replace(base, kva_method="net_funding"),
-        "공사 CVA RW 5% (HF였다면)": replace(base, ba_cva_rw_hf=0.05),
-        "공사와 방향 반대": replace(base, hf_reverse=True),
+        "공공기관 A CVA RW 5% (정부보증 금융이었다면)": replace(base, ba_cva_rw_hf=0.05),
+        "공공기관 A와 방향 반대": replace(base, hf_reverse=True),
         "금리 요인 없음 (환율만, 이전 모델)": replace(base, rate_factors=False),
         "금리 변동성 x0.5": replace(base, rate_vol_scale=0.5),
         "금리 변동성 x1.5": replace(base, rate_vol_scale=1.5),
@@ -230,7 +230,7 @@ def print_pnl(a: Assumptions, r: LineFeeResult) -> None:
     n = a.notional_krw_oku
     section(f"5. 손익 (수수료 {a.fee_structure}, 명목 대비 / 억원 / 연 bp)")
     for name, x in (("수수료 수입 (공공기관 A 쿠폰 가산 PV)" if a.fee_structure == "running" else "딜러 B upfront 수취", r.fee_income),
-                    ("(-) HF 신용 비용", -r.line_fee),
+                    ("(-) 공공기관 A 신용 비용", -r.line_fee),
                     ("(-) 딜러 B 헤지 비용", -r.hedge_cost),
                     ("= 순마진", r.net_margin)):
         print(f"{name:<26}{x:>10.2%}{x * n:>9.1f}{r.to_running_bp(x):>8.1f}")

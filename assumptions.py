@@ -8,7 +8,7 @@
 새로 받으려면 `python market_data.py --out 새파일.json` (블룸버그 필요, 회귀 기준 스냅샷은 덮어쓰지 않는다).
 
 거래: Party A 딜러 B, Party B 당행. 딜러 B가 최초에 원화 지급·엔화 수취, 만기에 반대,
-중간에 엔/원 고정금리 교환. 반대편 HF와는 같은 조건의 반대 거래 (무담보).
+중간에 엔/원 고정금리 교환. 반대편 공공기관 A와는 같은 조건의 반대 거래 (무담보).
 """
 from dataclasses import dataclass, field
 
@@ -31,7 +31,7 @@ class Assumptions:
     #   "upfront": 양쪽 쿠폰이 같고 딜러 B가 upfront를 지급 (dealer_b_upfront_bullet_bp)
     fee_structure: str = "running"
     hf_krw_spread_bp: float = 10.0
-    # True면 공사와의 방향을 뒤집는다 (귀사가 공사에 KRW를 주고 JPY를 받음, 딜러 B와도 반대).
+    # True면 공공기관 A와의 방향을 뒤집는다 (귀사가 공공기관 A에 KRW를 주고 JPY를 받음, 딜러 B와도 반대).
     # SIMM IM은 민감도 부호만 바뀌므로 금액이 같다.
     hf_reverse: bool = False
     break_year: int = 10              # 딜러 B와의 mutual break 시점 (dealer_b_structure="break"일 때)
@@ -40,11 +40,11 @@ class Assumptions:
     market: Market = field(default_factory=load, repr=False)
 
     # ---- 신용 ----
-    hf_cds_tenor: int = 10            # HF 신용 대용치: 한국 국가 CDS 이 만기 값을 30년 평탄하게 적용
-    hf_spread_over_sovereign_bp: float = 0.0  # HF가 국가보다 넓다고 볼 때 가산
+    hf_cds_tenor: int = 10            # 공공기관 A 신용 대용치: 한국 국가 CDS 이 만기 값을 30년 평탄하게 적용
+    hf_spread_over_sovereign_bp: float = 0.0  # 공공기관 A가 국가보다 넓다고 볼 때 가산
     cds_dealer_b: float = 0.0070        # 딜러 B CDS (정산 지연 0이면 쓰이지 않음)
     lgd: float = 0.60                 # 부도시 손실률
-    include_hf_cva: bool = False      # HF 회계상 CVA. 위험가중치 0%, PD 0이므로 미반영
+    include_hf_cva: bool = False      # 공공기관 A 회계상 CVA. 위험가중치 0%, PD 0이므로 미반영
     pfe_quantiles: tuple = (0.95, 0.99)  # PFE 신뢰수준
 
     # ---- 딜러 B CSA ----
@@ -75,7 +75,7 @@ class Assumptions:
     # 목표 자본비율: 보통주자본(CET1) 기준. 요구수익률(ROE)과 같은 자본 기준으로 맞춘다.
     # 목표비율 13%는 DECISIONS M4의 기준값 (규제 요구 총자본 11.5% = 최저 8% + 보전 2.5% + D-SIB 1%)
     capital_ratio: float = 0.13
-    rw_hf: float = 0.0                # HF 신용위험 위험가중치 (자본 부과 없음)
+    rw_hf: float = 0.0                # 공공기관 A 신용위험 위험가중치 (자본 부과 없음)
     # 딜러 B 신용위험 위험가중치 (시행세칙 별표3 35~37)
     #   은행과 동등한 규제를 받는 증권회사(36): 은행 기준(35) A+~A- 30%, BBB+~BBB- 50%
     #   그렇지 않은 증권회사: 기업 기준(37) 적용
@@ -101,7 +101,7 @@ class Assumptions:
 
     # ---- CVA 자본: BA-CVA (reduced, 헤지 없음) ----
     ba_cva_rw_dealer_b: float = 0.05    # 금융기관 투자등급 위험가중치
-    # 313.(2): 지방정부·정부보증 비금융·공공기관 투자등급 1% (공공기관 A). 정부보증 금융(HF)이면 5%
+    # 313.(2): 지방정부·정부보증 비금융·공공기관 투자등급 1% (공공기관 A). 정부보증 금융이면 5%
     ba_cva_rw_hf: float = 0.01
     ba_cva_ds: float = 0.65           # discount scalar
     ba_cva_alpha: float = 1.4
@@ -116,7 +116,7 @@ class Assumptions:
     # 엔/원 검토 당시 선택: 귀사 CVA 포트폴리오는 거의 완전 분산 → rho(0.5)에 수렴
     ba_cva_marginal_factor: float = 0.5
 
-    # ---- 딜러 B upfront (딜러 B가 귀사에 지급, HF에서는 받는 것 없음) ----
+    # ---- 딜러 B upfront (딜러 B가 귀사에 지급, 공공기관 A에서는 받는 것 없음) ----
     dealer_b_structure: str = "bullet"          # "bullet": 30년 break 없음, "break": 10년 mutual break
     # 30년 bullet upfront 금액 (엔/원 검토 당시 합의) (원화 명목 대비 bp). None이면 아래 연 bp x 원화 연금계수
     dealer_b_upfront_bullet_bp: float | None = 220.0
@@ -131,7 +131,7 @@ class Assumptions:
     replacement_dealer_charge_bp: float = 10.0
     break_exercise_prob: float = 1.0           # 10년 시점에 break가 실행될 확률
 
-    # ---- 금리 요인 (공사 익스포저 시뮬레이션) ----
+    # ---- 금리 요인 (공공기관 A 익스포저 시뮬레이션) ----
     # 통화별 평행이동 요인. 변동성·상관은 market_snapshot.json의 hist (python market_data.py hist --out 새파일.json)
     rate_factors: bool = True
     rate_vol_scale: float = 1.0               # 과거 추정 변동성에 곱하는 배수
