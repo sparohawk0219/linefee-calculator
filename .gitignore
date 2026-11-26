@@ -18,14 +18,24 @@ reviews/
 local/
 # UI 평가 실행 기록 (행동 로그, 점수)
 ui_eval/runs/
-# 거래상대방 마스터 실데이터 (가명 샘플 data/counterparties.sample.csv 만 커밋)
-data/counterparties.csv
-# 관리자가 저장한 은행 파라미터 (로컬 전용. 없으면 엔진 기본값)
-data/bank_params.json
+# data/: 가명 샘플만 커밋 (실데이터 마스터, 관리자 파라미터, 저장 중 임시 파일, 백업 모두 로컬 전용)
+data/*
+!data/counterparties.sample.csv
+# 블룸버그 스냅샷을 다른 이름으로 저장한 것 (market_data.py --out)
+*snapshot*.json
+# 저장 중 임시 파일
+*.tmp
 
-# 실데이터 엑셀 (로컬 전용)
-/*.xlsx
-data/*.xlsx
+# 실데이터 파일 (로컬 전용, 하위 폴더 포함)
+**/*.xlsx
+**/*.xls
+**/*.xlsm
 /*.csv
 /*.jpeg
 /*.jpg
+/*.png
+/*.docx
+/*.hwp
+/*.hwpx
+# 로컬 Claude 설정
+.claude/settings.local.json
