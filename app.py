@@ -52,7 +52,7 @@ from linefee.pricing import (Run, annual_pnl, breakeven, fee_unit_pv, market_gap
                              market_hedge, par_client, run)
 from linefee.trade import (BA_CVA_RW, CCP_REG_MPOR_DAYS, CSA, BankParams, Counterparty, Leg, Trade,  # noqa: E402
                            build_deal, fee_delta, untradable)
-from ui import store  # noqa: E402
+from ui import ccf, store  # noqa: E402
 
 OKU = 1e8
 CCYS = ["KRW", "USD", "JPY"]
@@ -926,6 +926,10 @@ if st.button("계산", type="primary"):
             if loc_key == "upfront":
                 be_running = breakeven(build_deal(client_trade, client, dealer, hedge=hedge_used,
                                                   fee_location="client", fee=0.0), m, params)
+        # 여신환산율 참고 표시 (L-088): 로컬 표가 있을 때만
+        _tbl = ccf.load_table()
+        ccf_use = (ccf.usage(_tbl, client_trade.product, client_trade.maturity, ccf.notional_krw(client_trade, m.spot),
+                             base.v0_client) if _tbl else None)
         # 사후 검증용 기록 (L-092). 실패해도 계산은 막지 않는다
         store.log_calculation(store.calc_record(
             deal, base, be, params, dict(market_src=st.session_state["market_src"], as_of=m.as_of, hedge_kind=hedge_kind,
@@ -933,7 +937,8 @@ if st.button("계산", type="primary"):
         st.session_state["result"] = dict(deal=deal, base=base, be=be, zero=zero, be_running=be_running,
                                           hedge_kind=hedge_kind, loc=loc_key, fee=fee_delta(client_trade, fee_in),
                                           upfront=upfront * OKU, unit_pv=fee_unit_pv(deal, m), is_fx=is_fx,
-                                          qu=QU, client_no_fee=client_trade, params=params, sig=sig, product_key=product)
+                                          qu=QU, client_no_fee=client_trade, params=params, sig=sig, product_key=product,
+                                          ccf=ccf_use)
 
 res = st.session_state.get("result")
 if res and (not isinstance(res["base"], Run) or "sig" not in res):
@@ -993,6 +998,10 @@ if res:
                 f"- 첫날 이익: {r.day1 / OKU:,.2f}억원 (아래 단계별 표의 첫 줄과 같은 값)  \n"
                 + (fee_ask + "  \n" if fee_ask else "")
                 + f"- 손익분기 세후 요구수익률: {be_line}")
+    if res.get("ccf"):
+        cu = res["ccf"]
+        st.caption(f"참고: 여신환산율 기준 한도 사용액 {cu['total'] / OKU:,.1f}억원 = {cu['row']} 환산율 {cu['rate']:.2%} x 명목 "
+                   f"{cu['notional'] / OKU:,.0f}억원 + 양의 시가 {cu['positive_mv'] / OKU:,.1f}억원 (여신 부서 표, 라인피 계산에는 쓰지 않음)")
     if res["hedge_kind"] in ("line", "ccp"):
         ht = deal.hedge_trade
         terms = " / ".join(

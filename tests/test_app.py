@@ -267,6 +267,30 @@ def test_default_grade():
         check("엔진도 PD 100%면 명확한 오류 (UntradableError)", "PD 100%" in str(e))
 
 
+def test_ccf_reference():
+    print("여신환산율 참고 표시 (L-088): 로컬 표가 있을 때만")
+    import openpyxl
+    at = new_app()
+    calc(at)
+    check("표가 없으면 참고 표시가 없다", not any("여신환산율" in c.value for c in at.caption))
+    wb = openpyxl.Workbook()   # 가명 값 (은행 표 값이 아님)
+    ws = wb.active
+    ws.append([None, "표", None])
+    ws.append([None, "1년 이하", "2년 이하", "3년 이하", "5년 이하", "10년 이하", "10년 초과"])
+    ws.append([None, "금리", 0.01, 0.02, 0.03, 0.04, 0.05, 0.06])
+    ws.append([None, "외환", 0.07, 0.07, 0.08, 0.09, 0.10, 0.11])
+    wb.save(Path(DATA_DIR) / "여신환산율.xlsx")
+    at = AppTest.from_file(str(Path(__file__).resolve().parent.parent / "app.py"), default_timeout=600)
+    at.secrets["admin_password"] = ADMIN_PW
+    at.run()
+    res = calc(at)
+    caps = [c.value for c in at.caption if "여신환산율" in c.value]
+    check("표가 있으면 한도 사용액 참고가 보인다", len(caps) == 1 and "참고" in caps[0])
+    cu = res["ccf"]
+    check("외환 행, 사용액 = 환산율 x 명목 + 양의 시가", cu["row"] == "외환" and abs(
+        cu["total"] - (cu["rate"] * cu["notional"] + cu["positive_mv"])) < 1)
+
+
 def test_validate_params():
     print("BankParams.problems (L-013)")
     check("기본값은 문제 없음", BankParams().problems() == [])
@@ -285,6 +309,7 @@ if __name__ == "__main__":
     except FileNotFoundError as e:   # 스냅샷은 로컬 전용
         sys.exit(str(e))
     test_validate_params()
+    test_ccf_reference()
     test_product_roundtrip()
     test_param_ranges()
     test_roles()
