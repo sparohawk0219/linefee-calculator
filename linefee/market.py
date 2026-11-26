@@ -14,6 +14,7 @@
 과거 추정: 금리 10년 주간 변화(정규), 환율 로그 주간 변화. 5년, 금요일 기준
 """
 import json
+import os
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from pathlib import Path
@@ -109,7 +110,10 @@ def check_business_day(as_of: str, ccys=CURRENCIES) -> None:
 # 블룸버그
 # ---------------------------------------------------------------------------
 def fetch(years: int = 5, path: Path = SNAPSHOT) -> dict:
-    """현재값과 과거 추정치를 받아 스냅샷으로 저장한다. 값이 없는 테너는 빠진다."""
+    """현재값과 과거 추정치를 받아 스냅샷으로 저장한다. 값이 없는 테너는 빠진다.
+
+    필수 호가(OPTIONAL_GROUPS 밖)가 하나라도 없으면 ValueError로 멈추고 기존 파일을 덮어쓰지 않는다.
+    """
     from bbg import bdh, bdp
 
     tickers = [t for group in TICKERS.values() for t in group.values()]
@@ -154,7 +158,10 @@ def fetch(years: int = 5, path: Path = SNAPSHOT) -> dict:
         "sigma": dict(zip(FACTORS, map(float, vol))) | {"r_KRW_irs": irs_vol},  # 금리: 연 정규(소수), 환율: 로그
         "corr": np.corrcoef(x).round(6).tolist(),
     }
-    path.write_text(json.dumps(snap, indent=2, ensure_ascii=False), encoding="utf-8")
+    check_snapshot(snap)   # 필수 호가가 빠졌으면 여기서 예외: 기존 파일은 그대로 둔다 (L-022)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(snap, indent=2, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, path)   # 다 쓴 뒤에 교체: 쓰다 실패해도 기존 스냅샷이 남는다
     return snap
 
 
