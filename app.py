@@ -519,6 +519,15 @@ with st.sidebar:
                                    help="은행 CVA 포트폴리오 대비 증분. 완전 분산이면 0.5(rho)")
         im_spread = st.number_input("낸 IM 조달 스프레드 (bp)", value=round(sp.im_funding_spread * 1e4, 6), step=1.0,
                                     key="adm_im_spread")
+        op_bic = st.number_input("운영위험 BI 한계계수 BIC (%)", value=round(sp.op_risk_bic * 100, 6), min_value=0.0,
+                                 step=1.0, key="adm_op_bic",
+                                 help="신 표준방법: 첫날 이익이 영업지수(BI)를 3년간 첫날 이익/3씩 올린다고 보고, "
+                                      "추가 운영위험 자본 = BIC x ILM x 첫날 이익/3. 0이면 운영위험 KVA를 넣지 않는다")
+        op_ilm = st.number_input("운영위험 내부손실승수 ILM", value=float(sp.op_risk_ilm), min_value=0.0, step=0.1,
+                                 key="adm_op_ilm")
+        proc_cost = st.number_input("건당 처리 비용 (원)", value=float(sp.processing_cost_krw), min_value=0.0,
+                                    step=100_000.0, format="%.0f", key="adm_proc_cost",
+                                    help="거래 1건의 처리·관리 비용 (현재가치). 순마진에서 '처리 비용'으로 뺀다")
         st.header("시뮬레이션")
         n_opts = [2000, 5000, 10000, 20000]
         n_paths = st.select_slider("경로 수", n_opts, value=sp.n_paths if sp.n_paths in n_opts else 5000,
@@ -532,7 +541,8 @@ with st.sidebar:
             sp, capital_ratio=cap_ratio / 100, hurdle_after_tax=hurdle / 100, tax_rate=tax / 100,
             ftp_spread=ftp / 1e4, ftp_spread_krw=ftp_krw / 1e4, kva_funding_spread=kva_sp / 1e4,
             kva_funding="krw_irs" if kva_curve.startswith("원화 IRS") else "krw_ccs", recognise_fba=fba,
-            ba_cva_marginal_factor=marginal, im_funding_spread=im_spread / 1e4, rate_vol_scale=vol_scale,
+            ba_cva_marginal_factor=marginal, im_funding_spread=im_spread / 1e4, op_risk_bic=op_bic / 100,
+            op_risk_ilm=op_ilm, processing_cost_krw=proc_cost, rate_vol_scale=vol_scale,
             rate_mean_reversion=kappa, n_paths=n_paths)
 
     st.divider()

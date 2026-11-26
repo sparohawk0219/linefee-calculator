@@ -129,6 +129,16 @@ def equiv():
     print(f"  손익분기 bp: 100억엔 {be_big.extra_bp_pa:+.4f}, 1천만엔 {be_small.extra_bp_pa:+.4f} "
           f"(계산 {len(be_big.runs)}번 / {len(be_small.runs)}번)")
     C.near("손익분기 bp가 명목과 무관 (100억엔 vs 1천만엔)", be_small.extra_bp_pa, be_big.extra_bp_pa, 0.002)
+    # 운영위험 KVA (M28, L-090): 목표비율 x 12.5 x BIC x ILM x D/3을 3년간 (h - r) 할인. 처리 비용은 순마진에서 그대로
+    h = p.cost_of_capital
+    k = p.capital_ratio * 12.5 * p.op_risk_bic * p.op_risk_ilm * r1.day1 / 3
+    approx = k * float(np.sum([(h - r1.op_rate[i]) * (r1.op_times[i + 1] - r1.op_times[i])
+                               * np.exp(-h * (r1.op_times[i] + r1.op_times[i + 1]) / 2) for i in range(len(r1.op_rate))]))
+    C.near("운영위험 KVA = 목표비율 x 12.5 x BIC x ILM x D/3 x int_0^3 (h - r) e^-ht", r1.costs["KVA (운영위험)"] / OKU,
+           approx / OKU, 1e-4)
+    r0 = run(d1, m, replace(p, op_risk_bic=0.0, processing_cost_krw=1e7))
+    C.near("BIC 0이면 운영위험 KVA 0, 처리 비용 1천만원은 순마진에서 그대로",
+           (r1.net - r0.net) / OKU, (-r1.costs["KVA (운영위험)"] + 1e7) / OKU, 1e-9)
 
 
 def usdkrw_client(m, years=5.0):

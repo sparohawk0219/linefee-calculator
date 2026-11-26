@@ -18,6 +18,9 @@
            첫날 이익을 CET1로 적립하고, 묶인 자본이 조달을 대체한다 (확정 방식, M1).
            다만 자본 중 미수(running 라인피의 첫날 이익 G)에 묶인 부분 min(G, K)는 현금이 아니라 r을 벌지 못하고
            미수의 할인 이자 r_d(engine.receivable_df)만 번다 (M1 보완, Run C L-076). 항목 "KVA (미수에 묶인 자본)".
+    KVA (운영위험) = int (h - r(t)) x K_op(t) x e^{-ht} dt,  K_op = CET1 목표비율 x 12.5 x BIC x ILM x max(D, 0) / N  (0 <= t < N년)
+           신 표준방법 근사 (M28): 첫날 이익 D가 영업지수 BI의 금융 요소에 N(=3)년 평균으로 들어가 BI를 N년 동안 D/N 올린다.
+    처리 비용 = 건당 처리·관리 비용 (원, 상수)
 첫날 이익 = V_고객(0) + V_헤지(0) + upfront
 순마진   = 첫날 이익 - 비용 합계
 몬테카를로 표준오차: 순마진을 경로별 기여의 평균으로 쓰고(대조 난수면 짝 평균) 표준편차 / sqrt(경로 수).
@@ -154,6 +157,9 @@ class Run:
     net_se: float = 0.0              # 순마진 몬테카를로 표준오차 (원)
     mc_check: tuple | None = None    # 음수 평균회귀일 때만: (경로 평균이 선도가치와 3 표준오차 넘게 다른 시점 수, 시점 수). L-034
     tied_capital: np.ndarray | None = None     # E[min(G(t)+, K(t))] 미수에 묶인 자본 (원). L-076
+    op_times: np.ndarray | None = None         # 운영위험 자본 격자 (년, 0 ~ N년). L-090
+    op_capital: np.ndarray | None = None       # 운영위험 필요자본 (원)
+    op_rate: np.ndarray | None = None          # 그 격자의 KVA 조달금리 r(t)
     receivable_rate: np.ndarray | None = None  # r_d(t) 미수의 할인 이자율, 구간 [t, t+dt]
     params: BankParams = field(repr=False, default=None)
 
@@ -200,6 +206,8 @@ class Run:
         out = float(_kva_weights(self.times, h, self.funding_rate) @ self.total_capital)
         if self.tied_capital is not None:
             out += float(_spread_weights(self.times, h, self.funding_rate - self.receivable_rate) @ self.tied_capital)
+        if self.op_capital is not None:
+            out += float(_kva_weights(self.op_times, h, self.op_rate) @ self.op_capital)
         return out
 
     def net_at(self, hurdle_after_tax: float) -> float:
@@ -233,6 +241,20 @@ class Run:
         vals = [self.net_at(h) for h in grid]
         i = int(np.argmin(vals))
         return float(vals[i]), float(grid[i])
+
+
+def _op_risk_capital(day1: float, p: BankParams, fund_curve) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """(시점, 운영위험 필요자본, 구간 조달금리 r). 신 표준방법 근사 (M28, Run C L-090).
+
+    BI의 금융 요소는 트레이딩 손익의 N년 평균이므로 첫날 이익 D는 N년 동안 BI를 D/N 올린다 (D < 0이면 0으로 본다).
+    추가 운영위험 자본 = BIC(한계 구간 계수) x ILM x D/N, 필요 CET1 = 목표비율 x 12.5 x 그 자본. 0 <= t < N에서 상수.
+    """
+    n = max(int(p.op_risk_years), 1)
+    t = np.linspace(0.0, float(n), 52 * n + 1)
+    k = p.capital_ratio * 12.5 * p.op_risk_bic * p.op_risk_ilm * max(day1, 0.0) / n
+    cap = np.full_like(t, k)     # [0, N] 구간 상수 (사다리꼴이 int_0^N을 그대로 적분)
+    r = -np.diff(np.log(fund_curve.df(t))) / np.diff(t) + p.kva_funding_spread
+    return t, cap, r
 
 
 def mc_martingale_check(values: np.ndarray, forward: np.ndarray, antithetic: bool) -> tuple[int, int]:
@@ -343,6 +365,13 @@ def run(deal: Deal, m: MarketData, p: BankParams) -> Run:
     costs["FVA (조달)"] = fva
 
     day1 = v0c + v0h + deal.upfront_krw
+    # 운영위험 자본 (M28, L-090): 첫날 이익이 BI를 N년 동안 D/N 올린다. 결정적이라 자체 격자(주 단위)로 적분한다
+    op_t, op_k, op_r = _op_risk_capital(day1, p, fund_curve)
+    costs["KVA (운영위험)"] = float(_kva_weights(op_t, h, op_r) @ op_k)
+    path_cost += costs["KVA (운영위험)"]
+    if p.processing_cost_krw:
+        costs["처리 비용"] = float(p.processing_cost_krw)
+        path_cost += costs["처리 비용"]
     net_path = _pair_mean(day1 - path_cost, p.antithetic)
     client_v = values["고객"]
     mc_check = None
@@ -359,7 +388,7 @@ def run(deal: Deal, m: MarketData, p: BankParams) -> Run:
         vm_posted=np.maximum(vm_net, 0).mean(axis=0), vm_received=np.maximum(-vm_net, 0).mean(axis=0),
         fund_need=need, fund_surplus=surplus, fund_expected=expected_b, im=im_dealer, ftp=sp,
         funding_rate=r, disc=disc, net_se=float(net_path.std(ddof=1) / np.sqrt(len(net_path))), params=p, mc_check=mc_check,
-        tied_capital=tied.mean(axis=0), receivable_rate=r_d,
+        tied_capital=tied.mean(axis=0), receivable_rate=r_d, op_times=op_t, op_capital=op_k, op_rate=op_r,
     )
 
 

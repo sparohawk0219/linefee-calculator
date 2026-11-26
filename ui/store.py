@@ -25,7 +25,8 @@ CSA_KINDS = ["없음", "VM", "VM+IM"]
 LGD = 0.60   # 마스터에 없는 항목: 고정
 # 관리자가 저장하는 은행 파라미터 필드 (그 밖의 필드는 BankParams 기본값 그대로)
 PARAM_FIELDS = ["capital_ratio", "hurdle_after_tax", "tax_rate", "ftp_spread", "ftp_spread_krw", "kva_funding_spread",
-                "kva_funding", "recognise_fba", "ba_cva_marginal_factor", "im_funding_spread", "rate_vol_scale",
+                "kva_funding", "recognise_fba", "ba_cva_marginal_factor", "im_funding_spread", "op_risk_bic",
+                "op_risk_ilm", "processing_cost_krw", "rate_vol_scale",
                 "rate_mean_reversion", "n_paths"]
 
 

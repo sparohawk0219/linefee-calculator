@@ -138,6 +138,12 @@ class BankParams:
     ba_cva_ds: float = 0.65
     ba_cva_alpha: float = 1.4
     im_funding_spread: float = 0.0       # 낸 IM 조달 비용 (MVA)
+    # 운영위험 자본 (신 표준방법 근사, M28): 첫날 이익 D가 영업지수 BI의 금융 요소에 op_risk_years년 동안 D / op_risk_years씩 들어간다.
+    # 추가 운영위험 자본 = BI 한계계수(BIC) x ILM x D / op_risk_years. KVA에 (h - r)로 반영 ("KVA (운영위험)")
+    op_risk_bic: float = 0.15            # BI 한계계수 (신 표준방법 BIC 구간 계수. 기본 15%, 0이면 미반영)
+    op_risk_ilm: float = 1.0             # 내부손실승수 ILM
+    op_risk_years: int = 3               # BI 평균 기간 (년)
+    processing_cost_krw: float = 0.0     # 건당 처리·관리 비용 (원, 현재가치). "처리 비용" 항목으로 순마진에서 뺀다
     simm_version: str = "2.8+2512"
     rate_vol_scale: float = 1.0
     rate_mean_reversion: float = 0.0
@@ -153,9 +159,13 @@ class BankParams:
         if not 0.0 <= self.tax_rate < 1.0:
             errs.append("세율은 0% 이상 100% 미만")
         for name, v in (("CET1 목표비율", self.capital_ratio), ("세후 요구수익률", self.hurdle_after_tax),
-                        ("BA-CVA 한계계수", self.ba_cva_marginal_factor), ("금리 변동성 배수", self.rate_vol_scale)):
+                        ("BA-CVA 한계계수", self.ba_cva_marginal_factor), ("금리 변동성 배수", self.rate_vol_scale),
+                        ("운영위험 BIC", self.op_risk_bic), ("운영위험 ILM", self.op_risk_ilm),
+                        ("건당 처리 비용", self.processing_cost_krw)):
             if v < 0.0:
                 errs.append(f"{name}은 0 이상")
+        if self.op_risk_years < 1:
+            errs.append("운영위험 BI 평균 기간은 1년 이상")
         return errs
 
     def ftp_for(self, ccy: str) -> float:
