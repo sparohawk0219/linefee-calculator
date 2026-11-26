@@ -1,0 +1,12 @@
+{
+ "inputs": {"pd_xlsx": "PD.xlsx", "dealers": "local/data/dealers.csv", "fi_ratings": "local/data/fi_ratings.csv",
+            "customers": "local/data/counterparty_min.csv"},
+ "pd_overrides": {"BBB-|외감": 0.01462},
+ "fi_csa": {"F1": ["VM", "USD"]},
+ "alias": {"딜러 B 표기다름": "딜러 B"},
+ "public": {"공공기관 A": ["가", 0, true, "설립법 손실보전"], "공공기관 E": ["나", 20, false, "손실보전 조항 미확인"]},
+ "public_fin": ["공공기관 A"],
+ "public_name_hint": {},
+ "exclude": {"시험 레코드": "시험 레코드"},
+ "extra_rows": []
+}
