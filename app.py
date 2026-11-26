@@ -530,7 +530,7 @@ with st.sidebar:
                                     help="거래 1건의 처리·관리 비용 (현재가치). 순마진에서 '처리 비용'으로 뺀다")
         st.header("시뮬레이션")
         n_opts = [2000, 5000, 10000, 20000]
-        n_paths = st.select_slider("경로 수", n_opts, value=sp.n_paths if sp.n_paths in n_opts else 5000,
+        n_paths = st.select_slider("경로 수", n_opts, value=sp.n_paths if sp.n_paths in n_opts else 10000,
                                    key="adm_n_paths")
         vol_scale = st.number_input("금리 변동성 배수", value=sp.rate_vol_scale, min_value=0.0, step=0.1,
                                     key="adm_vol_scale")

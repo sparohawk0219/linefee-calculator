@@ -147,7 +147,7 @@ class BankParams:
     simm_version: str = "2.8+2512"
     rate_vol_scale: float = 1.0
     rate_mean_reversion: float | None = None   # 금리 평균회귀 kappa. None = 스냅샷 과거 추정치(없으면 0), 값 = 관리자 입력 (M26)
-    n_paths: int = 5000
+    n_paths: int = 10000                 # 몬테카를로 경로 수 기본값 (DECISIONS M29). 5,000은 시드 변동 0.2~0.3bp
     dt: float = 0.25                     # 시뮬레이션 최대 간격 (년)
     min_steps: int = 24                  # 최소 구간 수 (단기 거래의 적분 정확도)
     antithetic: bool = True              # 대조 난수 (경로 i와 i + n/2가 부호만 반대)
