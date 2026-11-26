@@ -373,7 +373,8 @@ def cp_pick(key: str, title: str, names: list, master: dict) -> Counterparty:
     st.caption(f"{title} = {name}. CSA: {master[name]['csa']}. 이 거래의 {title}이(가) 맞는지 확인하세요.")
     flags = {"등급 갱신 필요": "옛 등급 체계(세분 전)라 가운데 등급의 PD로 임시 계산합니다. 거래 전 재평가 등급으로 바꾸세요.",
              "32조 구분 확인 필요": "공공기관 위험가중치 구분(별표3 32조)이 확인되지 않아 보수적으로 20%를 씁니다.",
-             "외부등급 없음": "외부 신용등급이 없어 무등급 위험가중치를 씁니다."}
+             "외부등급 없음": "외부 신용등급이 없어 무등급 위험가중치를 씁니다.",
+             "VM CSA 없음": "VM CSA 없음: 무담보로 계산합니다. 실제로 VM 담보를 주고받는 상대라면 마스터의 CSA를 확인하세요."}
     for tag, msg in flags.items():
         if f"[{tag}]" in name:
             st.warning(f"{title}: {msg}")

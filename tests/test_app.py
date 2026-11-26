@@ -237,6 +237,24 @@ def test_master_rename():
     check("다른 행과 같은 이름으로 바꾸면 거부", any("이미 있습니다" in e.value for e in at.error))
 
 
+def test_no_vm_csa_tag():
+    print("마스터 꼬리표 [VM CSA 없음]은 상대방 선택 경고에 뜬다 (L-040 후속)")
+    new_app()
+    seed = ("name,grade,pd_pct,csa,dealer_line,credit_rw_pct,ba_cva_sector\n"
+            "기업 C,투자등급,0.2,없음,N,100,소재·에너지·산업재·농업·제조·광업\n"
+            "딜러 N [VM CSA 없음],투자등급,0.0,없음,Y,20,금융기관(정부보증 금융 포함)\n"
+            "딜러 B,투자등급,0.0,VM+IM,Y,20,금융기관(정부보증 금융 포함)\n")
+    (Path(DATA_DIR) / "counterparties.csv").write_text(seed, encoding="utf-8-sig")
+    at = AppTest.from_file(str(Path(__file__).resolve().parent.parent / "app.py"), default_timeout=600)
+    at.run()
+    at.selectbox(key="preset").set_value("USD/KRW 5년 CCS (기업)").run()
+    at.selectbox(key="cl_name").set_value("기업 C").run()
+    at.selectbox(key="dl_name").set_value("딜러 N [VM CSA 없음]").run()
+    check("헤지 딜러가 VM CSA 없음이면 '무담보로 계산' 경고", any("VM CSA 없음" in w.value and "무담보" in w.value for w in at.warning))
+    at.selectbox(key="dl_name").set_value("딜러 B").run()
+    check("꼬리표가 없으면 그 경고는 없다", not any("VM CSA 없음" in w.value for w in at.warning))
+
+
 def test_default_grade():
     print("부도 등급(PD 100%) 상대방은 거래불가, 계산 막음 (M25, L-060)")
     new_app()
@@ -316,6 +334,7 @@ if __name__ == "__main__":
     test_admin_save_changes_general()
     test_master()
     test_master_rename()
+    test_no_vm_csa_tag()
     test_default_grade()
     print("실패: " + (", ".join(FAILS) if FAILS else "없음"))
     sys.exit(1 if FAILS else 0)
