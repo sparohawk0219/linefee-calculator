@@ -6,6 +6,7 @@
     python tools/ledger.py decide L-003 accept|reject|defer [메모]
     python tools/ledger.py impl   L-003 done|partial|skipped [커밋 해시와 한 일]   # 구현자 기록
     python tools/ledger.py close  L-003 closed|not-closed [근거]
+    python tools/ledger.py challenge L-003 upheld|overturned [근거]   # Track C V2 독립 반박 (overturned는 TRIAGE에서 빠짐)
     python tools/ledger.py status
     python tools/ledger.py show L-003
 
@@ -13,6 +14,7 @@
   id                  "R1-001" (리뷰어 접두어 + 일련번호)
   severity            "P1" 결과 숫자가 틀리거나 규정 위반 | "P2" 조건에 따라 틀림·문서와 코드 불일치 | "P3" 품질·명확성
   category            methodology | regulatory | numerics | code | tests | docs-mismatch | repo-hygiene | decision-conflict
+                      | data | ux
   file, line          저장소 기준 상대 경로, 줄 번호 (파일 전체면 0)
   claim               무엇이 문제인지 한두 문장
   repro_command       저장소 루트에서 실행하면 문제를 보여 주는 명령 한 줄 (없으면 "" 와 함께 근거를 claim에)
@@ -35,11 +37,12 @@ TRIAGE = REVIEWS / "TRIAGE.md"
 
 SEVERITIES = ["P1", "P2", "P3"]
 CATEGORIES = ["methodology", "regulatory", "numerics", "code", "tests", "docs-mismatch", "repo-hygiene",
-              "decision-conflict"]
+              "decision-conflict", "data", "ux"]   # data: 상대방 마스터·변환 규칙, ux: 화면 동작·권한 (Track C)
 REQUIRED = ["id", "severity", "category", "file", "line", "claim", "repro_command", "expected_vs_actual"]
 VERIFY = ["reproduced", "refuted", "unverifiable"]
 DECIDE = ["accept", "reject", "defer"]
 CLOSE = ["closed", "not-closed"]
+CHALLENGE = ["upheld", "overturned"]   # Track C V2: P1·P2 reproduced 항목의 독립 반박 시도 결과
 IMPL = ["done", "partial", "skipped"]
 
 
@@ -163,11 +166,13 @@ def cmd_status(_):
     rows = load()
 
     def count(field, values):
-        return ", ".join(f"{v or '미정'} {sum(1 for r in rows if r[field] == v)}" for v in values)
+        return ", ".join(f"{v or '미정'} {sum(1 for r in rows if r.get(field) == v)}" for v in values)
 
     print(f"전체 {len(rows)}건")
     print("심각도: " + ", ".join(f"{s} {sum(1 for r in rows if r['severity'] == s)}" for s in SEVERITIES))
     print("검증:   " + count("verify", VERIFY + [None]))
+    if any(r.get("challenge") for r in rows):
+        print("반박:   " + count("challenge", CHALLENGE))
     print("결정:   " + count("decision", DECIDE + [None]))
     acc = [r for r in rows if r["decision"] == "accept"]
     print("구현:   " + ", ".join(f"{v or '미정'} {sum(1 for r in acc if r.get('impl') == v)}" for v in IMPL + [None]))
@@ -186,7 +191,7 @@ def cmd_render(_):
     if not rows:
         sys.exit("원장이 비어 있습니다. 먼저 merge.")
     live = [r for r in rows if not r["duplicate_of"] and r["verify"] != "refuted"
-            and r["category"] != "decision-conflict"]
+            and r.get("challenge") != "overturned" and r["category"] != "decision-conflict"]
     conflicts = [r for r in rows if r["category"] == "decision-conflict"]
     refuted = [r for r in rows if r["verify"] == "refuted"]
     dups = [r for r in rows if r["duplicate_of"]]
@@ -244,7 +249,8 @@ def main():
     for name, field, note, allowed in (("verify", "verify", "verify_note", VERIFY),
                                        ("impl", "impl", "impl_note", IMPL),
                                        ("decide", "decision", "decision_note", DECIDE),
-                                       ("close", "closure", "closure_note", CLOSE)):
+                                       ("close", "closure", "closure_note", CLOSE),
+                                       ("challenge", "challenge", "challenge_note", CHALLENGE)):
         s = sub.add_parser(name)
         s.add_argument("id")
         s.add_argument("value")

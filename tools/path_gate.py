@@ -31,6 +31,9 @@ ROLES = {
     "a1-run": ["reviews/**"],                                    # Run A1 전체가 끝난 뒤의 게이트 (발견사항 + 원장 + TRIAGE)
     "implementer": ["linefee/**", "app.py", "tests/**", "docs/METHODOLOGY_v1.md", "DESIGN.md", "*.py",
                     "requirements.txt", "reg/**", "README.md"],               # I: accept 항목이 가리키는 파일 (DECISIONS·tools·ui_eval 제외)
+    # Track C (최종 점검): 섹터 리뷰어는 reviewer, V1·V2는 verifier 역할을 쓴다
+    "critic": ["reviews/C_COVERAGE.md"],                          # K: 누락 점검 보고서만
+    "c-run": ["reviews/**"],                                      # Run C 전체가 끝난 뒤의 게이트
     # Track B
     "harness": ["ui_eval/**", "tests/test_score.py"],            # H: 평가 하니스 (위 금지 목록의 ui_eval 파일 3개 제외)
     "ui": ["app.py", "ui/**", ".streamlit/secrets.toml.example",  # U0, U: 화면만. 엔진·하니스 금지
