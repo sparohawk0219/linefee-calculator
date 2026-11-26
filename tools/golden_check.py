@@ -106,6 +106,14 @@ def golden_deals():
     def line(tr, m, cl, dl, fee):
         return build_deal(tr, cl, dl, hedge=market_hedge(tr, m), fee_location="client", fee=fee)
 
+    # Run C 보강 (2026-11-26): 기본내부등급법 고객(대기업·중소기업), 원화 IRS BTB·딜러 라인, KRW 담보 딜러(M24 할인)
+    corp_irb = Counterparty("기업 고객(IRB)", 0.0, cva(corp), 0.002, 0.6, CSA(), irb=True)
+    corp_sme = Counterparty("기업 고객(IRB 중소)", 0.0, cva(corp), 0.01, 0.6, CSA(), irb=True, sales_eok=500.0)
+    dealer_krw = Counterparty("헤지 딜러(KRW 담보)", 0.20, cva(fin), 0.0, 0.6, CSA(vm=True, ccy="KRW"))
+
+    def line_d(tr, m, cl, dl, fee):   # 딜러 담보 커브로 Par 헤지 (M24)
+        return build_deal(tr, cl, dl, hedge=market_hedge(tr, m, dl), fee_location="client", fee=fee)
+
     return [
         ("CCS_JPYKRW_30Y_BTB_CLIENT10", "legacy",
          lambda m: build_deal(jpykrw(m), client_a, dealer_b, fee_location="client", fee=10.0)),
@@ -120,6 +128,12 @@ def golden_deals():
          lambda m: line(irs(m, "KRW", 1e11, 5.0, 4, "ACT/365"), m, corp_cl, ccp("KRW"), 5.0)),
         ("OIS_USD_3Y_CCP", "latest",
          lambda m: line(irs(m, "USD", 1e8, 3.0, 1, "ACT/360"), m, corp_cl, ccp("USD"), 5.0)),
+        ("CCS_USDKRW_5Y_LINE_IRB", "latest", lambda m: line(usdkrw_ccs(m), m, corp_irb, dealer_im, 10.0)),
+        ("CCS_USDKRW_5Y_LINE_IRB_SME", "latest", lambda m: line(usdkrw_ccs(m), m, corp_sme, dealer_im, 10.0)),
+        ("IRS_KRW_5Y_BTB_KRWCSA", "latest",
+         lambda m: build_deal(irs(m, "KRW", 1e11, 5.0, 4, "ACT/365"), corp_cl, dealer_krw, fee_location="client", fee=5.0)),
+        ("IRS_KRW_5Y_LINE_KRWCSA", "latest",
+         lambda m: line_d(irs(m, "KRW", 1e11, 5.0, 4, "ACT/365"), m, corp_cl, dealer_krw, 5.0)),
     ]
 
 

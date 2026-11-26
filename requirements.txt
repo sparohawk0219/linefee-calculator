@@ -10,5 +10,7 @@ streamlit>=1.51
 # app.py가 직접 import한다 (streamlit이 함께 설치하지만 직접 쓰므로 선언). 하한은 시험하지 못한 값이다
 pandas>=2.0
 altair>=5.0
+# 엑셀 읽기: 마스터 생성(python -m ui.master_build), 여신환산율 참고 표시. 없으면 참고 표시만 생략된다
+openpyxl>=3.1
 # 블룸버그에서 시장 데이터를 새로 받을 때만 필요 (python market_data.py, python -m linefee.market):
 #   pip install --index-url=https://blpapi.bloomberg.com/repository/releases/python/simple/ blpapi
