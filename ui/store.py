@@ -115,12 +115,25 @@ def load_master() -> tuple[dict, list, bool]:
     return rows, bad, False
 
 
+def _file_columns(path: Path) -> list:
+    """파일 머리줄의 열 이름 (없거나 못 읽으면 빈 목록)."""
+    try:
+        with open(path, encoding="utf-8-sig", newline="") as f:
+            return [c for c in (next(csv.reader(f), []) or []) if c]
+    except OSError:
+        return []
+
+
 def save_master(rows: dict) -> None:
+    """마스터를 쓴다. MASTER_COLS 밖의 열(비고 등)은 파일 머리줄·행에 있는 것을 그대로 이어 쓴다."""
     p = master_path()
     p.parent.mkdir(parents=True, exist_ok=True)
+    extra = [c for c in _file_columns(p) if c not in MASTER_COLS]
+    for r in rows.values():
+        extra += [c for c in r if c and c not in MASTER_COLS and c not in extra]
     tmp = p.with_suffix(".csv.tmp")
     with open(tmp, "w", encoding="utf-8-sig", newline="") as f:
-        w = csv.DictWriter(f, MASTER_COLS, extrasaction="ignore")
+        w = csv.DictWriter(f, MASTER_COLS + extra, extrasaction="ignore", restval="")
         w.writeheader()
         for r in rows.values():
             w.writerow({**r, "dealer_line": "Y" if is_dealer(r) else "N"})
