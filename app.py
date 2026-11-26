@@ -502,7 +502,7 @@ with st.sidebar:
                               key="adm_ftp", help="FTP - CSA 담보 이자(SOFR). USD 현금 담보 VM의 FVA에 쓴다")
         ftp_krw = st.number_input("KRW 담보 조달 FTP 스프레드 (bp)", value=round(sp.ftp_spread_krw * 1e4, 6),
                                   step=1.0, key="adm_ftp_krw",
-                                  help="KRW FTP - KRW 현금 담보 이자. CCP 원화 IRS의 VM 조달(FVA)에 쓴다 (확인 필요)")
+                                  help="KRW FTP - KRW 현금 담보 이자. VM 담보 통화가 KRW인 헤지 상대(CCP 원화 IRS, KRW CSA 양자 딜러)의 VM 조달(FVA)에 쓴다 (확인 필요)")
         kva_sp = st.number_input("KVA 조달 스프레드 alpha (bp)", value=round(sp.kva_funding_spread * 1e4, 6),
                                  step=1.0, key="adm_kva_sp",
                                  help="KVA 조달금리 r(t) = CD(원화 IRS) 커브 선도 + alpha")

@@ -116,7 +116,7 @@ class BankParams:
     hurdle_after_tax: float = 0.10
     tax_rate: float = 0.275
     ftp_spread: float = 0.0012           # USD 현금 담보 조달 FTP - CSA 이자(SOFR)
-    ftp_spread_krw: float = 0.0012       # KRW 현금 담보 조달: KRW FTP - 담보 이자(CCP KRW 담보 이자). CCP 원화 IRS의 FVA
+    ftp_spread_krw: float = 0.0012       # KRW 현금 담보 조달: KRW FTP - KRW 담보 이자. VM 담보 통화가 KRW인 상대(CCP 원화 IRS, KRW CSA 양자 딜러)의 FVA
                                          # (확인 필요: 임시로 USD와 같게)
     kva_funding_spread: float = 0.0010   # KVA 조달금리 = CD(원화 IRS) 커브 선도 + alpha. alpha 기본 10bp
     kva_funding: str = "krw_irs"         # KVA r(t)의 KRW 기준 커브: "krw_irs"(CD·IRS, 확정) | "krw_ccs"(USD 담보 KRW, 비교용)
