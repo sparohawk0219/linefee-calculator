@@ -1013,8 +1013,12 @@ if res:
         if fx_mode:
             base_k = fwd_rate(res["client_no_fee"])
             sgn = 1 if next(l for l in deal.client_trade.legs if l.ccy == "KRW").direction == "receive" else -1
-            q[1].metric(f"손익분기 고객 선도환율 ({UL})", f"{(base_k + sgn * need) * qu:,.2f}",
-                        f"마진 전 {base_k * qu:,.2f}", delta_color="off")
+            if res["loc"] == "hedge":   # 라인피가 헤지 쪽 마진이면 고객 환율은 그대로고 헤지 환율이 바뀐다 (L-054)
+                q[1].metric(f"손익분기 헤지 선도환율 ({UL})", f"{(base_k - sgn * need) * qu:,.2f}",
+                            f"고객 환율 {base_k * qu:,.2f} 그대로, 마진 전 헤지 {base_k * qu:,.2f}", delta_color="off")
+            else:
+                q[1].metric(f"손익분기 고객 선도환율 ({UL})", f"{(base_k + sgn * need) * qu:,.2f}",
+                            f"마진 전 {base_k * qu:,.2f}", delta_color="off")
         elif res["hedge_kind"] == "btb":
             need_up = -res["zero"].net
             q[1].metric("BTB upfront로만 받는다면", f"{need_up / OKU:,.1f}억",
