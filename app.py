@@ -57,7 +57,7 @@ from ui import store  # noqa: E402
 OKU = 1e8
 CCYS = ["KRW", "USD", "JPY"]
 UNIT = {"KRW": (1e8, "억원"), "JPY": (1e8, "억엔"), "USD": (1e6, "백만달러")}
-CCP_NAME, CCP_RW = "CCP (KRX·LCH)", 0.02   # 원화 IRS·달러 OIS의 헤지 상대: 적격 CCP 고정 (거래 익스포저 위험가중치 2%)
+CCP_NAME, CCP_RW = "CCP (KRX·LCH)", 0.02   # 원화 IRS·달러 OIS의 CCP 헤지 상대 (적격 CCP, 거래 익스포저 위험가중치 2%). BTB·딜러 라인은 IRS_HEDGES에서 고른다
 SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100"]   # 범주색 1~4번 (고정 순서)
 BTB, LINE, DIRECT = "BTB (헤지도 같은 오프마켓, 라인피 제외)", "딜러 라인 (Par 헤지)", "직접 입력 (BTB 헤지 조건)"
 HEDGE_MODES = {BTB: "btb", LINE: "line", DIRECT: "direct"}
