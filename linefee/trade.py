@@ -29,7 +29,8 @@ class Leg:
     freq: int = 1                # 연 지급 횟수 (지급일은 MarketData.schedule: 실제 영업일·결제일 기준)
     day_count: str = "ACT/365"   # 이자 일수 계산: "ACT/365"(ACT/365F) | "ACT/360"
     final_exchange: bool = True  # 만기 원금 교환. 거래일 원금 교환은 현물 결제로 보고 제외
-    discount: str = "csa"        # "csa": USD 현금 담보 커브, "local": 자국 통화 담보 커브 (CCP 청산 IRS·OIS)
+    discount: str = "csa"        # 할인 커브 (MarketData.disc_for): "csa" USD 현금 담보, "krw" KRW 현금 담보(CD 커브),
+                                 # "local" 자국 통화 담보. 담보 상대방 거래는 build_deal이 상대방 CSA 통화로 정한다 (M24)
 
     @property
     def sign(self) -> float:
@@ -177,6 +178,23 @@ class Deal:
     solve_on: str = "client"     # 손익분기 조정 다리: "client" = 고객 수취 다리, "hedge" = 헤지 지급 다리
 
 
+def collateral_discount(cp: Counterparty | None) -> str | None:
+    """상대방 VM 담보 통화에 맞는 다리 할인 종류 (DECISIONS M24). USD 현금 -> "csa", KRW 현금 -> "krw", 무담보 -> None."""
+    if cp is None or not cp.csa.vm:
+        return None
+    if cp.csa.ccy not in ("USD", "KRW"):
+        raise ValueError(f"{cp.name}: VM 담보 통화 {cp.csa.ccy}의 할인 커브가 없습니다 (USD·KRW만)")
+    return "krw" if cp.csa.ccy == "KRW" else "csa"
+
+
+def collateralised(trade: Trade, cp: Counterparty | None) -> Trade:
+    """다리 할인을 상대방 담보 통화 커브로 바꾼 거래 (DECISIONS M24). 무담보 상대방이면 그대로 (기존 방식)."""
+    kind = collateral_discount(cp)
+    if kind is None:
+        return trade
+    return replace(trade, legs=[replace(l, discount=kind) for l in trade.legs])
+
+
 def fee_delta(trade: Trade, fee: float) -> float:
     """화면 단위 수수료를 Trade.favoured의 delta로. 통화스왑: 연 bp → 소수, FX 선도: 원/외화 1단위 그대로."""
     return fee if trade.product == "FXFWD" else fee / 1e4
@@ -188,7 +206,9 @@ def build_deal(client_trade: Trade, client: Counterparty, dealer: Counterparty,
     """거래 조합을 만든다. client_trade는 라인피를 넣기 전 조건이다.
 
     hedge=None이면 BTB 헤지: 고객 거래와 같은 조건(넘어온 오프마켓 포함), 방향만 반대, 라인피 제외.
-    hedge를 주면 그 조건 그대로 쓴다 (딜러 라인 Par 헤지 pricing.market_hedge, 또는 직접 입력).
+    hedge를 주면 그 조건 그대로 쓴다 (딜러 라인 Par 헤지 pricing.market_hedge(..., dealer), 또는 직접 입력).
+    다리 할인은 상대방 담보 통화 커브로 정한다 (collateralised, M24): 고객 거래는 고객 CSA, 헤지는 딜러(CCP) CSA.
+    무담보 상대방의 거래는 넘어온 다리 할인 그대로다.
     라인피 fee (통화스왑: 연 bp, FX 선도: 원/외화 1단위)는
       fee_location="client": 고객 거래에 반영 (고객이 내는 다리 가산 / 선도환율 마진)
       fee_location="hedge":  BTB 헤지에서 딜러에 주는 다리 차감
@@ -202,4 +222,5 @@ def build_deal(client_trade: Trade, client: Counterparty, dealer: Counterparty,
         if fee_location == "hedge" and fee:
             hedge = hedge.favoured("pay", fee_delta(hedge, fee))
     solve_on = "hedge" if fee_location == "hedge" else "client"
-    return Deal(client_trade, hedge, client, dealer, upfront_krw, solve_on)
+    return Deal(collateralised(client_trade, client), collateralised(hedge, dealer), client, dealer, upfront_krw,
+                solve_on)

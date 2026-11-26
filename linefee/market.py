@@ -185,10 +185,27 @@ class MarketData:
     missing: list = field(default_factory=list)   # 스냅샷을 받을 때 값이 없던 티커 (화면 표시용)
     short_end: bool = True     # 1년 미만 상품(스왑포인트, 단기 OIS, CD)이 커브에 들어갔는지
     notes: list = field(default_factory=list)     # 읽을 때 대체한 값 등 화면 안내 (예: JPYKRW 호가 없음 -> 교차 환율)
+    _curve_cache: dict = field(default_factory=dict, repr=False)   # disc_for가 만든 담보 통화 변환 커브
 
     def disc_for(self, leg) -> Curve:
-        """다리 할인 커브. leg.discount == "local"이면 자국 통화 담보 커브, 아니면 USD 담보 커브."""
-        return self.local[leg.ccy] if getattr(leg, "discount", "csa") == "local" else self.disc[leg.ccy]
+        """다리 할인 커브 (담보 통화 커브, DECISIONS M24). leg.discount:
+          "csa"   USD 현금 담보: USD 담보 커브 (USD 다리는 SOFR)
+          "krw"   KRW 현금 담보: KRW 다리는 CD(원화 IRS) 커브, 외화 다리는 외화(USD 담보) x CD / KRW(USD 담보)
+                  (원화 환산 현금흐름 전체를 CD 커브로 할인한 것과 같다. KOFR OIS 대신 스냅샷에 있는 CD 커브)
+          "local" 자국 통화 담보 커브 (무담보 원화 IRS·달러 OIS의 기존 방식)
+        """
+        kind = getattr(leg, "discount", "csa")
+        if kind == "local":
+            return self.local[leg.ccy]
+        if kind == "krw":
+            if leg.ccy == "KRW":
+                return self.local["KRW"]
+            key = f"krw:{leg.ccy}"
+            if key not in self._curve_cache:
+                self._curve_cache[key] = cv.ProductCurve(self.disc[leg.ccy], self.local["KRW"], self.disc["KRW"],
+                                                         f"{leg.ccy} (KRW 담보)")
+            return self._curve_cache[key]
+        return self.disc[leg.ccy]
 
     def fwd_fx(self, ccy: str, t) -> np.ndarray:
         """t 시점 선도환율 (1단위당 원화)."""

@@ -65,6 +65,7 @@
   - USD 현금흐름: SOFR OIS 커브.
   - 외화 현금흐름: 외화 OIS에 해당 통화/USD 베이시스를 반영한 "USD 담보 하 외화" 커브.
     KRW는 USD SOFR, KRW/USD CCS, 단기 FX 스왑 포인트로 구축한다.
+- KRW 현금 CSA: 원화 환산 현금흐름 전체를 KRW 담보 이자 커브로 할인한다. v1은 KOFR OIS 대신 CD(원화 IRS) 커브를 쓴다(DECISIONS M24).
 - 무담보 거래: 같은 CSA 커브로 평가하고, 조달 효과는 FVA로 따로 잡는다.
   평가와 비용을 분리하기 위해서다.
 

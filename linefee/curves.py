@@ -121,6 +121,25 @@ class Curve:
         return cls(times, np.log([v for _, v in nodes]), name)
 
 
+@dataclass
+class ProductCurve:
+    """할인계수 = a(t) x b(t) / c(t). 담보 통화를 바꾼 커브에 쓴다 (DECISIONS M24).
+
+    예: KRW 현금 담보 하 USD 현금흐름 = USD(USD 담보) x KRW CD / KRW(USD 담보). 원화 환산 시
+    F(t) x 이 커브 = 선도환율 x KRW CD 할인이 되어 원화 환산 현금흐름 전체를 KRW 담보(CD) 커브로 할인한 것과 같다.
+    """
+    a: Curve
+    b: Curve
+    c: Curve
+    name: str = ""
+
+    def df(self, t) -> np.ndarray:
+        return self.a.df(t) * self.b.df(t) / self.c.df(t)
+
+    def zero_rate(self, t: float) -> float:
+        return float(-np.log(self.df(t)) / t)
+
+
 # ---------------------------------------------------------------------------
 # 부트스트랩
 # ---------------------------------------------------------------------------

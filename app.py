@@ -756,7 +756,8 @@ with b:
             ss["dl_name"] = None
         dealer = cp_pick("dl_name", "헤지 딜러", dl_names, master)
         if dealer is not None and dealer.csa.vm:   # VM 담보 통화는 마스터(ISDA CSA 적격담보) 기준
-            st.caption(f"VM 담보 통화: {dealer.csa.ccy} 현금 (FVA 조달 스프레드에 쓴다)")
+            st.caption(f"VM 담보 통화: {dealer.csa.ccy} 현금 (헤지 다리 할인 커브와 FVA 조달 스프레드에 쓴다"
+                       + (". KRW 담보는 CD(원화 IRS) 커브로 할인" if dealer.csa.ccy == "KRW" else "") + ")")
 
 st.subheader("3. 헤지와 수수료")
 if is_irs:
@@ -891,7 +892,7 @@ if st.button("계산", type="primary"):
         st.error(" / ".join(errs))
     else:
         sig = input_signature()
-        hedge_used = market_hedge(client_trade, m) if hedge_kind in ("line", "ccp") else hedge_trade
+        hedge_used = market_hedge(client_trade, m, dealer) if hedge_kind in ("line", "ccp") else hedge_trade
         deal = build_deal(client_trade, client, dealer, hedge=hedge_used, fee_location=loc_key,
                           fee=fee_in, upfront_krw=upfront * OKU)
         with st.spinner("시뮬레이션 중"):

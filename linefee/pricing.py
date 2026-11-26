@@ -28,17 +28,19 @@ from .engine import (leg_annuity_krw, leg_value_today, remaining_value_ratio, si
                      trade_forward_value, trade_value_paths, trade_value_today)
 from .market import MarketData
 from .regcap import capital_paths, ccp_im_profile, im_profile, sa_ccr_ead
-from .trade import BankParams, Deal, Trade, untradable
+from .trade import BankParams, Counterparty, Deal, Trade, collateralised, untradable
 
 
-def market_hedge(client_trade: Trade, m: MarketData) -> Trade:
+def market_hedge(client_trade: Trade, m: MarketData, dealer: Counterparty | None = None) -> Trade:
     """딜러 라인·CCP 헤지: 고객 거래의 반대 포지션을 시장가(거래일 가치 0)로 체결한다.
+
+    dealer를 주면 그 상대방의 담보 통화 커브로 평가한 시장가다 (collateralised, M24. KRW CSA 딜러면 CD 커브 할인).
 
     통화스왑: 미러 거래의 은행 지급 다리 금리(변동이면 스프레드)를 바꿔 가치 0으로 맞춘다.
     IRS·OIS (CCP 헤지): 미러 거래의 고정금리 다리 금리를 바꿔 가치 0으로 맞춘다.
     FX 선도: 미러 거래의 KRW 다리 금액(= 선도환율)을 바꿔 가치 0으로 맞춘다. KRW 다리가 없으면 지급 다리.
     """
-    hedge = client_trade.mirrored()
+    hedge = collateralised(client_trade.mirrored(), dealer)
     if client_trade.product == "FXFWD":
         idx = next((i for i, l in enumerate(hedge.legs) if l.ccy == "KRW"), hedge.leg("pay"))
         leg = hedge.legs[idx]
@@ -239,7 +241,8 @@ def run(deal: Deal, m: MarketData, p: BankParams) -> Run:
     ccys = deal.client_trade.currencies | deal.hedge_trade.currencies
     ends = {id(tr): m.end_time(tr) for tr in (deal.client_trade, deal.hedge_trade)}
     horizon = max(ends.values())
-    local = all(l.discount == "local" for tr in (deal.client_trade, deal.hedge_trade) for l in tr.legs)
+    # 같은 통화 IRS·OIS 거래(고객·헤지 모두)면 KRW 금리 변동성을 KRW IRS 10년물 추정치로 (engine.factor_setup local)
+    local = all(tr.product == "IRS" for tr in (deal.client_trade, deal.hedge_trade))
     s = simulate(m, ccys, horizon, p, local=local)
     times = s.times
     dt = np.diff(times)
