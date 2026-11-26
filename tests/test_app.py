@@ -9,6 +9,7 @@ from streamlit import config as st_config
 from streamlit.runtime.secrets import secrets_singleton
 from streamlit.testing.v1 import AppTest
 
+from linefee.market import SNAPSHOT, snapshot_guide
 from linefee.trade import BankParams
 
 FAILS = []
@@ -239,6 +240,8 @@ def test_validate_params():
 
 
 if __name__ == "__main__":
+    if not SNAPSHOT.exists():   # 스냅샷은 로컬 전용: 트레이스백 대신 안내하고 멈춘다 (L-071)
+        sys.exit(snapshot_guide(SNAPSHOT))
     try:
         new_app()
     except FileNotFoundError as e:   # 스냅샷은 로컬 전용

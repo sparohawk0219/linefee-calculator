@@ -40,13 +40,28 @@ Python 3.10 이상.
 
 호가 기준일(`as_of`)은 영업일이어야 한다. 주말·공휴일 기준일의 스냅샷은 읽을 때 오류를 낸다.
 
-## 테스트 (스냅샷 필요)
+## 테스트
 
-    python -m tests.test_dates            # 날짜 계산 (스냅샷 불필요)
-    python -m tests.test_snapshot         # 스냅샷 필수 키 검사 (스냅샷 불필요)
+스냅샷 없이 돈다:
+
+    python -m tests.test_dates            # 날짜 계산
+    python -m tests.test_snapshot         # 스냅샷 필수 키 검사 (스냅샷이 있으면 그 파일을 검사)
+    python -m tests.test_store            # 마스터·파라미터 저장
+    python -m tests.test_irb              # 기본내부등급법 RW
+    python -m tests.test_regcap_floor     # SA-CCR 만기 하한
+    python -m tests.test_score            # 상대방 점수
+
+스냅샷이 필요하다 (없으면 안내를 출력하고 멈춘다):
+
+    python -m tests.test_app              # 대시보드(AppTest). 비밀값 파일 없이도 돈다
     python -m tests.test_curves           # 커브 재평가
     python -m tests.regression_jpykrw     # 엔/원 회귀
+    python -m tests.test_engine_kappa     # 금리 평균회귀 엔진
     python -m tests.verify_methodology    # 방법론 13장 검증 (수 분)
+    python main.py                        # 구버전 엔/원 계산 (루트 스냅샷)
+
+병합 전 값 불변 게이트(O7)는 `python tools/golden_check.py --ui`다. 기준값은 로컬 파일(`local/golden_baseline.json`, 저장소에 없다)이라
+기준값을 가진 PC에서만 돈다.
 
 ## 문서
 

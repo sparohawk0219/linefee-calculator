@@ -18,6 +18,8 @@ from dataclasses import replace
 import numpy as np
 
 from assumptions import Assumptions
+from linefee.market import snapshot_guide
+from market_data import SNAPSHOT
 from simm import simm
 from xva_model import LineFeeResult, compute_line_fee, coupons, hf_coupon_krw, supervisory_duration
 
@@ -160,6 +162,8 @@ def print_simm(a: Assumptions, r: LineFeeResult) -> None:
 
 
 def main() -> None:
+    if not SNAPSHOT.exists():   # 스냅샷은 로컬 전용: 트레이스백 대신 안내하고 멈춘다
+        raise SystemExit(snapshot_guide(SNAPSHOT))
     base = Assumptions()
     r = compute_line_fee(base)
     m = base.market

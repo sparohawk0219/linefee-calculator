@@ -25,6 +25,8 @@ streamlit run app.py              # 대시보드 (http://localhost:8501)
 python -m tests.regression_jpykrw # 엔/원 30년 CCS 회귀 테스트
 python -m tests.test_curves       # 커브 검증: 입력 상품 재평가 = 화면 금리
 python -m tests.verify_methodology # 13장 검증 수치 재생성
+python -m tests.test_app          # 대시보드 시험 (그 밖의 시험과 스냅샷 필요 여부는 README 테스트 절)
+python tools/golden_check.py --ui # 병합 전 값 불변 게이트 (로컬 기준값 필요)
 ```
 QuantLib(1.44)이 필요하다 (`pip install QuantLib`).
 
