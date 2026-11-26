@@ -331,7 +331,7 @@ def leg_inputs(prefix: str, title: str, direction: str, product: str) -> Leg:
     kind = st.radio("금리 형태", kinds, key=prefix + "kind", horizontal=True,
                     format_func=lambda k: "고정" if k == "fixed" else ("SOFR" if ccy == "USD" else "TONA") + " 변동")
     if kind == "fixed":
-        rate = st.number_input("고정금리 (%)", key=prefix + "rate", step=0.05, format="%.2f") / 100
+        rate = st.number_input("고정금리 (%)", key=prefix + "rate", step=0.01, format="%.4f") / 100
     else:
         rate = st.number_input("가산 스프레드 (bp)", key=prefix + "spread", step=1.0, format="%.2f") / 1e4
     c1, c2 = st.columns(2)
@@ -624,7 +624,8 @@ if admin:
                                     "매출 (억원)": str(r.get("sales_eok") or ""),
                                     "VM 통화": (r.get("vm_ccy") or "").upper() or "USD",
                                     "BA-CVA 업종": r["ba_cva_sector"]} for r in draft.values()]),
-                     hide_index=True, width="stretch")
+                     hide_index=True, width="stretch",
+                     column_config={"연 PD (%)": st.column_config.NumberColumn(format="%.4f")})
         st.caption("RW 방식이 IRB인 행은 신용 위험가중치를 PD·매출로 계산하므로 표의 신용 위험가중치 칸은 비어 있습니다.")
         if ss.get("adm_m_pick") not in [NEW_ROW, *draft]:
             ss["adm_m_pick"] = NEW_ROW
