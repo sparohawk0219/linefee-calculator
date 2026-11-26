@@ -39,16 +39,16 @@ EXPECTED = {
     "day1": 17.065,           # 첫날 이익
     "v0_client": 96.392,
     "v0_hedge": -79.327,
-    "net": 1.142,             # 순마진
-    "total_cost": 15.922,
-    "be_extra_bp": -0.692,    # 손익분기까지 고객 다리 추가 bp
-    "net_hedge_fee": 1.970,   # 구조 B (수수료를 딜러 B 다리에서 차감) 순마진
+    "net": 0.398,             # 순마진
+    "total_cost": 16.667,
+    "be_extra_bp": -0.251,    # 손익분기까지 고객 다리 추가 bp
+    "net_hedge_fee": 1.237,   # 구조 B (수수료를 딜러 B 다리에서 차감) 순마진
     "old_total": 17.447,      # 기존 모델 (xva_model.py)
     "old_fee_income": 17.134,
     "old_net": -0.313,
 }
-COST_EXPECTED = {"KVA (고객 신용)": 0.0, "KVA (고객 CVA)": 12.171, "KVA (딜러 신용)": 0.093, "KVA (딜러 CVA)": 0.314,
-                 "FVA (조달)": 3.344}
+COST_EXPECTED = {"KVA (고객 신용)": 0.0, "KVA (고객 CVA)": 12.171, "KVA (딜러 신용)": 0.096, "KVA (딜러 CVA)": 0.321,
+                 "KVA (미수에 묶인 자본)": 0.390, "FVA (조달)": 3.344, "KVA (운영위험)": 0.344}
 
 
 def measure(m, p):
