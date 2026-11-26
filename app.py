@@ -915,6 +915,11 @@ if res:
     k[3].metric("손익분기 세후 요구수익률 (자본비용 반영)",
                 "0% 미만 (전 구간 손실)" if hb is None else (f"{hb:.1%}" if hb < 0.5 else "50% 이상 (전 구간 이익)"),
                 f"입력 {rp.hurdle_after_tax:.1%}", delta_color="off")
+    if r.mc_check and r.mc_check[0] >= max(3, 0.1 * r.mc_check[1]):
+        st.warning(f"음수 평균회귀(연 {rp.rate_mean_reversion:+.2f})에서 시뮬레이션이 수렴하지 않았습니다: 경로 평균 시가가 "
+                   f"오늘 커브의 선도가치와 {r.mc_check[1]}개 시점 중 {r.mc_check[0]}개에서 표준오차 3배 넘게 다릅니다. "
+                   "화면의 표준오차는 이 편향을 반영하지 않아 작게 보일 수 있습니다. 이 결과는 신뢰하기 어렵습니다 "
+                   "(만기가 길고 음수 평균회귀가 클수록 심함).")
     st.caption(f"몬테카를로 표준오차: 자본비용 반영 손익 ±{r.net_se / OKU:,.2f}억 (±{abs(conv(r.net_se)):.2f} {UL}), "
                f"경로 {rp.n_paths:,}개 (대조 난수)")
     if hb is not None and hb >= 0.5:

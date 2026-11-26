@@ -139,6 +139,7 @@ class Run:
     ftp: float                       # FVA에 쓴 담보 조달 스프레드
     disc: np.ndarray                 # D(t)
     net_se: float = 0.0              # 순마진 몬테카를로 표준오차 (원)
+    mc_check: tuple | None = None    # 음수 평균회귀일 때만: (경로 평균이 선도가치와 3 표준오차 넘게 다른 시점 수, 시점 수). L-034
     params: BankParams = field(repr=False, default=None)
 
     def _sum(self, prefix: str) -> float:
@@ -214,6 +215,17 @@ class Run:
         vals = [self.net_at(h) for h in grid]
         i = int(np.argmin(vals))
         return float(vals[i]), float(grid[i])
+
+
+def mc_martingale_check(values: np.ndarray, forward: np.ndarray, antithetic: bool) -> tuple[int, int]:
+    """경로 평균 시가가 오늘 커브의 선도가치와 맞는지 (3 표준오차 초과 시점 수, 시점 수 - 1). 진단값이며 계산에 쓰지 않는다.
+
+    음수 평균회귀가 크면 할인계수가 소수 경로의 극단값에 몰려 평균이 선도가치에서 벗어난다 (표준오차는 작게 나온다).
+    """
+    v = (values[: len(values) // 2] + values[len(values) // 2:]) / 2 if antithetic else values
+    se = v.std(axis=0, ddof=1) / np.sqrt(len(v))
+    z = np.abs(values.mean(axis=0) - forward) / np.maximum(se, 1.0)
+    return int((z[1:] > 3).sum()), len(z) - 1
 
 
 def run(deal: Deal, m: MarketData, p: BankParams) -> Run:
@@ -299,6 +311,11 @@ def run(deal: Deal, m: MarketData, p: BankParams) -> Run:
     day1 = v0c + v0h + deal.upfront_krw
     net_path = _pair_mean(day1 - path_cost, p.antithetic)
     client_v = values["고객"]
+    mc_check = None
+    if p.rate_mean_reversion < 0:   # 음수 평균회귀(M14 허용 범위)일 때만 시뮬레이션 수렴을 점검한다
+        checks = [mc_martingale_check(values[name], trade_forward_value(tr, m, times), p.antithetic)
+                  for name, _, tr in parties]
+        mc_check = max(checks, key=lambda c: c[0] / max(c[1], 1))
     return Run(
         times=times, day1=day1, v0_client=v0c, v0_hedge=v0h,
         costs={k: v for k, v in costs.items() if abs(v) > 0 or k.startswith(("FVA", "KVA"))},
@@ -307,7 +324,7 @@ def run(deal: Deal, m: MarketData, p: BankParams) -> Run:
         pfe_client=np.quantile(np.maximum(client_v, 0), 0.95, axis=0),
         vm_posted=np.maximum(vm_net, 0).mean(axis=0), vm_received=np.maximum(-vm_net, 0).mean(axis=0),
         fund_need=need, fund_surplus=surplus, fund_expected=expected_b, im=im_dealer, ftp=sp,
-        funding_rate=r, disc=disc, net_se=float(net_path.std(ddof=1) / np.sqrt(len(net_path))), params=p,
+        funding_rate=r, disc=disc, net_se=float(net_path.std(ddof=1) / np.sqrt(len(net_path))), params=p, mc_check=mc_check,
     )
 
 
