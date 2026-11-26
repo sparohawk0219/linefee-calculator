@@ -7,6 +7,7 @@ Streamlit에 의존하지 않는다.
 """
 import csv
 import json
+import math
 import os
 from dataclasses import asdict, fields, replace
 from pathlib import Path
@@ -43,6 +44,12 @@ def params_path() -> Path:
 # ---------------------------------------------------------------------------
 # 상대방 마스터
 # ---------------------------------------------------------------------------
+def parse_sales(v):
+    """매출(억원) 칸 -> 실수 또는 None(빈 칸). 천 단위 쉼표는 허용한다 ('6,814.6'). 숫자가 아니면 ValueError."""
+    t = str(v if v is not None else "").strip().replace(",", "")
+    return float(t) if t else None
+
+
 def check_row(row: dict) -> str:
     """행에 문제가 있으면 이유, 없으면 빈 문자열."""
     if not str(row.get("name", "")).strip():
@@ -59,8 +66,19 @@ def check_row(row: dict) -> str:
         pd_, rw = float(row["pd_pct"]), float(row["credit_rw_pct"])
     except (KeyError, TypeError, ValueError):
         return "연 PD와 신용 위험가중치는 숫자"
+    if not (math.isfinite(pd_) and math.isfinite(rw)):
+        return "연 PD와 신용 위험가중치는 유한한 숫자 (nan·inf 불가)"
     if not 0.0 <= pd_ <= 100.0 or rw < 0.0:
         return "연 PD는 0~100%, 신용 위험가중치는 0 이상"
+    vm = str(row.get("vm_ccy") or "").strip().upper()
+    if vm and vm not in VM_CCYS:
+        return f"VM 담보 통화는 {' / '.join(VM_CCYS)} 중 하나 (빈 칸이면 USD)"
+    try:
+        sales = parse_sales(row.get("sales_eok"))
+    except ValueError:
+        return "매출(억원)은 숫자 (빈 칸 가능)"
+    if sales is not None and not (math.isfinite(sales) and sales >= 0.0):
+        return "매출(억원)은 0 이상의 유한한 숫자"
     return ""
 
 
@@ -117,10 +135,7 @@ def counterparty(row: dict) -> Counterparty:
     if ccy in VM_CCYS:
         csa = replace(csa, ccy=ccy)
     irb = (row.get("rw_method") or "고정") == "IRB"
-    try:
-        sales = float(row.get("sales_eok")) if str(row.get("sales_eok") or "").strip() else None
-    except ValueError:
-        sales = None
+    sales = parse_sales(row.get("sales_eok"))   # check_row를 통과한 행이므로 숫자 또는 빈 칸
     return Counterparty(row["name"], float(row["credit_rw_pct"]) / 100, cva, float(row["pd_pct"]) / 100, LGD,
                         replace(csa), irb=irb, sales_eok=sales)
 
