@@ -29,7 +29,7 @@ ROLES = {
     "verifier": ["reviews/ledger.jsonl"],                        # V: tools/ledger.py verify 로만 기록
     "closer": ["reviews/ledger.jsonl"],                          # C: tools/ledger.py close 로만 기록
     "a1-run": ["reviews/**"],                                    # Run A1 전체가 끝난 뒤의 게이트 (발견사항 + 원장 + TRIAGE)
-    "implementer": ["linefee/**", "app.py", "tests/**", "docs/METHODOLOGY_v1.md", "DESIGN.md", "*.py",
+    "implementer": ["linefee/**", "app.py", "ui/**", "tests/**", "docs/METHODOLOGY_v1.md", "DESIGN.md", "*.py",
                     "requirements.txt", "reg/**", "README.md"],               # I: accept 항목이 가리키는 파일 (DECISIONS·tools·ui_eval 제외)
     # Track C (최종 점검): 섹터 리뷰어는 reviewer, V1·V2는 verifier 역할을 쓴다
     "critic": ["reviews/C_COVERAGE.md"],                          # K: 누락 점검 보고서만
