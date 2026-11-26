@@ -1,7 +1,14 @@
+# 하한은 확인한 범위만 적었다. 시험은 최신 설치(numpy 2.5, QuantLib 1.44, streamlit 1.67, pandas 3.1, altair 6.3)로만 했고,
+# 상한·고정은 두지 않는다. 숫자가 업그레이드로 바뀌는지는 `python tools/golden_check.py --ui`로 확인한다.
 numpy>=1.26
 # 커브 부트스트랩·영업일 (linefee/curves.py)
 QuantLib>=1.44
-# 라인피 대시보드 (streamlit run app.py). pandas·altair는 streamlit과 함께 설치된다
-streamlit>=1.40
+# 라인피 대시보드 (streamlit run app.py)
+# streamlit 하한 1.51: app.py가 st.altair_chart(width="stretch")를 쓰는데 이 인자는 1.51부터 받는다
+#   (1.50 배포 파일의 altair_chart 서명에는 없고 1.51에는 있음을 확인. st.dataframe의 width="stretch"는 1.49부터).
+streamlit>=1.51
+# app.py가 직접 import한다 (streamlit이 함께 설치하지만 직접 쓰므로 선언). 하한은 시험하지 못한 값이다
+pandas>=2.0
+altair>=5.0
 # 블룸버그에서 시장 데이터를 새로 받을 때만 필요 (python market_data.py, python -m linefee.market):
 #   pip install --index-url=https://blpapi.bloomberg.com/repository/releases/python/simple/ blpapi
