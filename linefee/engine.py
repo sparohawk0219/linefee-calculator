@@ -250,6 +250,21 @@ def remaining_value_ratio(leg: Leg, trade: Trade, m: MarketData, times: np.ndarr
     return fwd / fwd[0] if fwd[0] else np.zeros_like(times)
 
 
+def receivable_df(leg: Leg, trade: Trade, m: MarketData, times: np.ndarray) -> np.ndarray:
+    """미수 G(t)(remaining_value_ratio의 원화 선도가치)가 이자로 불어나는 할인계수 D_g(t). 구간 금리 r_d = -d ln D_g / dt.
+
+    원화 선도가치 = F_c(t) x sum_{지급 >= t} a x D_c(지급) / D_c(t) = S_c x sum a D_c(지급) / [D_c(t) x S_c / F_c(t)] 이므로
+    D_g(t) = D_c(t) x S_c / F_c(t). KRW 다리면 그 다리 할인 커브, USD 담보 외화 다리면 USD 담보 KRW 커브,
+    KRW 담보 외화 다리면 CD 커브가 된다. FX 선도는 KRW 다리.
+    """
+    if trade.product == "FXFWD":
+        leg = next(l for l in trade.legs if l.ccy == "KRW")
+    d = m.disc_for(leg).df(times)
+    if leg.ccy == "KRW":
+        return d
+    return d * m.spot[leg.ccy] / m.fwd_fx(leg.ccy, times)
+
+
 def leg_annuity_krw(leg: Leg, trade: Trade, m: MarketData) -> float:
     """다리 금리 1(=100%)당 현재가치, 원화. 수수료 bp 환산에 쓴다."""
     sc = m.schedule(trade, leg)

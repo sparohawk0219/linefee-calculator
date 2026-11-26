@@ -13,9 +13,11 @@
              시장가 헤지:          B(0) = 0
            받은 upfront 현금은 자본(첫날 이익)이며 조달을 대체하는 효과는 KVA에서만 반영한다.
     MVA  = int IM_냄(t) x IM 조달 스프레드 x D dt
-    KVA  = int (h - r(t)) x E[K(t)] x e^{-ht} dt
+    KVA  = int [(h - r(t)) x E[K(t)] + (r(t) - r_d(t)) x E[min(G(t)+, K(t))]] x e^{-ht} dt
            h = 세전 요구수익률, r(t) = KRW 조달 기준금리(원화 IRS 커브) 선도 + KVA 조달 스프레드(KRW FTP - CD 커브).
-           첫날 이익을 CET1로 적립하고, 묶인 자본이 조달을 대체한다 (확정 방식).
+           첫날 이익을 CET1로 적립하고, 묶인 자본이 조달을 대체한다 (확정 방식, M1).
+           다만 자본 중 미수(running 라인피의 첫날 이익 G)에 묶인 부분 min(G, K)는 현금이 아니라 r을 벌지 못하고
+           미수의 할인 이자 r_d(engine.receivable_df)만 번다 (M1 보완, Run C L-076). 항목 "KVA (미수에 묶인 자본)".
 첫날 이익 = V_고객(0) + V_헤지(0) + upfront
 순마진   = 첫날 이익 - 비용 합계
 몬테카를로 표준오차: 순마진을 경로별 기여의 평균으로 쓰고(대조 난수면 짝 평균) 표준편차 / sqrt(경로 수).
@@ -24,7 +26,7 @@ from dataclasses import dataclass, field, replace
 
 import numpy as np
 
-from .engine import (leg_annuity_krw, leg_value_today, remaining_value_ratio, simulate,
+from .engine import (leg_annuity_krw, leg_value_today, receivable_df, remaining_value_ratio, simulate,
                      trade_forward_value, trade_value_paths, trade_value_today)
 from .market import MarketData
 from .regcap import capital_paths, ccp_im_profile, im_profile, sa_ccr_ead
@@ -104,6 +106,15 @@ def _kva_weights(times: np.ndarray, h: float, r: np.ndarray) -> np.ndarray:
     return w * np.exp(-h * times)
 
 
+def _spread_weights(times: np.ndarray, h: float, s: np.ndarray) -> np.ndarray:
+    """sum_j w_j X(t_j) = int s(t) X(t) e^{-ht} dt (사다리꼴). 구간 i의 s_i dt_i를 양 끝 노드에 반씩."""
+    a = s * np.diff(times) / 2
+    w = np.zeros_like(times)
+    w[:-1] += a
+    w[1:] += a
+    return w * np.exp(-h * times)
+
+
 def _el_weights(times: np.ndarray, disc: np.ndarray, pd: float, lgd: float) -> np.ndarray:
     surv = (1 - pd) ** times
     ds = (surv[:-1] - surv[1:]) / 2
@@ -142,6 +153,8 @@ class Run:
     disc: np.ndarray                 # D(t)
     net_se: float = 0.0              # 순마진 몬테카를로 표준오차 (원)
     mc_check: tuple | None = None    # 음수 평균회귀일 때만: (경로 평균이 선도가치와 3 표준오차 넘게 다른 시점 수, 시점 수). L-034
+    tied_capital: np.ndarray | None = None     # E[min(G(t)+, K(t))] 미수에 묶인 자본 (원). L-076
+    receivable_rate: np.ndarray | None = None  # r_d(t) 미수의 할인 이자율, 구간 [t, t+dt]
     params: BankParams = field(repr=False, default=None)
 
     def _sum(self, prefix: str) -> float:
@@ -184,7 +197,10 @@ class Run:
 
     def kva_at(self, hurdle_after_tax: float) -> float:
         h = hurdle_after_tax / (1 - self.params.tax_rate)
-        return float(_kva_weights(self.times, h, self.funding_rate) @ self.total_capital)
+        out = float(_kva_weights(self.times, h, self.funding_rate) @ self.total_capital)
+        if self.tied_capital is not None:
+            out += float(_spread_weights(self.times, h, self.funding_rate - self.receivable_rate) @ self.tied_capital)
+        return out
 
     def net_at(self, hurdle_after_tax: float) -> float:
         kva_items = [k for k in self.costs if k.startswith("KVA")]
@@ -260,6 +276,7 @@ def run(deal: Deal, m: MarketData, p: BankParams) -> Run:
 
     costs, capital, rwa = {}, {}, {}
     path_cost = np.zeros(n_paths)          # 경로별 비용 합 (표준오차용)
+    cap_total = np.zeros_like(values["고객"])   # 경로별 필요자본 합 (미수에 묶인 자본 min(G, K)용)
     vm_net = np.zeros_like(values["고객"])
     unc = np.zeros_like(values["고객"])
     unc_fwd = np.zeros_like(times)
@@ -286,6 +303,7 @@ def run(deal: Deal, m: MarketData, p: BankParams) -> Run:
             kva_path = cap[key] @ w_kva
             costs[f"KVA ({label})"] = float(kva_path.mean())
             path_cost += kva_path
+            cap_total = cap_total + cap[key]
         if cp.csa.vm:
             vm_net += -v
             mva = float(im_post * p.im_funding_spread * disc @ trap)
@@ -303,6 +321,12 @@ def run(deal: Deal, m: MarketData, p: BankParams) -> Run:
     side, idx = _solve_leg(deal)
     tr = deal.hedge_trade if side == "hedge" else deal.client_trade
     g = (v0c + v0h + min(deal.upfront_krw, 0.0)) * remaining_value_ratio(tr.legs[idx], tr, m, times)
+    # 미수에 묶인 자본: K 중 min(G, K)는 r 대신 미수의 할인 이자 r_d만 번다 -> (r - r_d) x min(G, K)를 KVA에 더한다 (L-076)
+    r_d = -np.diff(np.log(receivable_df(tr.legs[idx], tr, m, times))) / dt
+    tied = np.minimum(np.maximum(g, 0.0)[None, :], cap_total)
+    tied_path = tied @ _spread_weights(times, h, r - r_d)
+    costs["KVA (미수에 묶인 자본)"] = float(tied_path.mean())
+    path_cost += tied_path
     b = unc - g[None, :]
     need = np.maximum(b, 0).mean(axis=0)
     surplus = np.maximum(-b, 0).mean(axis=0)
@@ -335,6 +359,7 @@ def run(deal: Deal, m: MarketData, p: BankParams) -> Run:
         vm_posted=np.maximum(vm_net, 0).mean(axis=0), vm_received=np.maximum(-vm_net, 0).mean(axis=0),
         fund_need=need, fund_surplus=surplus, fund_expected=expected_b, im=im_dealer, ftp=sp,
         funding_rate=r, disc=disc, net_se=float(net_path.std(ddof=1) / np.sqrt(len(net_path))), params=p, mc_check=mc_check,
+        tied_capital=tied.mean(axis=0), receivable_rate=r_d,
     )
 
 
