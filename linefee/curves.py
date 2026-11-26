@@ -29,6 +29,19 @@ CALENDARS = {
     "KRW": ql.SouthKorea(ql.SouthKorea.Settlement),
 }
 
+# QuantLib 서울 달력(SouthKorea Settlement)에 없는 공휴일. 「관공서의 공휴일에 관한 규정」 제2조 제10호(공직선거법 제34조의
+# 임기만료에 의한 선거의 선거일)와 제11호(정부가 수시 지정하는 날, 임시공휴일)는 해마다 달라 QuantLib이 미리 넣지 않는다.
+# 연 1회(그리고 임시공휴일 지정 때) 점검해 여기에 더한다 (docs/METHODOLOGY_v1.md 3장 "서울 달력 추가 휴일").
+# 재·보궐선거일은 공휴일이 아니다. 대통령 선거일(임기만료 2030-06-03 기준 2030년 3월 예정)은 선거일이 공고되면 더한다.
+KRW_EXTRA_HOLIDAYS = {
+    "2025-06-03": "제21대 대통령 선거일 (규정 제2조 제10호)",
+    "2026-06-03": "제9회 전국동시지방선거일 (규정 제2조 제10호)",
+    "2028-04-12": "제23대 국회의원 선거일 (규정 제2조 제10호, 공직선거법 제34조: 임기만료일 전 50일 이후 첫 수요일)",
+    "2030-06-05": "제10회 전국동시지방선거일 (규정 제2조 제10호, 공직선거법 제34조: 임기만료일 전 30일 이후 첫 수요일)",
+}
+for _d in KRW_EXTRA_HOLIDAYS:   # QuantLib 달력 객체에 더한다 (같은 달력을 쓰는 JointCalendar에도 반영. 다시 더해도 같다)
+    CALENDARS["KRW"].addHoliday(ql.DateParser.parseISO(_d))
+
 
 def calendar(ccys) -> ql.Calendar:
     """통화들의 공통 영업일 달력."""

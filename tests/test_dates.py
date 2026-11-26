@@ -60,9 +60,22 @@ def test_spot_date():
     check("FX 선도 시작일 = 현물 결제일 (일)", round(sc.start[0] * 365), 2)
 
 
+def test_krw_extra_holidays():
+    print("서울 달력 추가 휴일 (L-025): 임기만료 선거일")
+    import QuantLib as ql
+
+    from linefee import curves as cv
+    check("2028-04-12 국회의원 선거일 휴일", cv.CALENDARS["KRW"].isBusinessDay(ql.Date(12, 4, 2028)), False)
+    check("2030-06-05 지방선거일 휴일", cv.CALENDARS["KRW"].isBusinessDay(ql.Date(5, 6, 2030)), False)
+    check("공통 달력(KRW+USD)에도 반영", cv.calendar(["KRW", "USD"]).isBusinessDay(ql.Date(12, 4, 2028)), False)
+    check("목록의 모든 날짜가 휴일", all(not cv.CALENDARS["KRW"].isBusinessDay(cv.qdate(d))
+                                    for d in cv.KRW_EXTRA_HOLIDAYS), True)
+
+
 if __name__ == "__main__":
     test_years_ago()
     test_business_day()
     test_spot_date()
+    test_krw_extra_holidays()
     print("실패: " + (", ".join(FAILS) if FAILS else "없음"))
     sys.exit(1 if FAILS else 0)
