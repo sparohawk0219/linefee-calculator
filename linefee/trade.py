@@ -146,7 +146,7 @@ class BankParams:
     processing_cost_krw: float = 0.0     # 건당 처리·관리 비용 (원, 현재가치). "처리 비용" 항목으로 순마진에서 뺀다
     simm_version: str = "2.8+2512"
     rate_vol_scale: float = 1.0
-    rate_mean_reversion: float = 0.0
+    rate_mean_reversion: float | None = None   # 금리 평균회귀 kappa. None = 스냅샷 과거 추정치(없으면 0), 값 = 관리자 입력 (M26)
     n_paths: int = 5000
     dt: float = 0.25                     # 시뮬레이션 최대 간격 (년)
     min_steps: int = 24                  # 최소 구간 수 (단기 거래의 적분 정확도)

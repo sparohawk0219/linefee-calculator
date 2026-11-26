@@ -156,6 +156,7 @@ class Run:
     disc: np.ndarray                 # D(t)
     net_se: float = 0.0              # 순마진 몬테카를로 표준오차 (원)
     mc_check: tuple | None = None    # 음수 평균회귀일 때만: (경로 평균이 선도가치와 3 표준오차 넘게 다른 시점 수, 시점 수). L-034
+    kappa: dict | None = None                  # 통화별 금리 평균회귀 kappa (engine.rate_kappas)
     tied_capital: np.ndarray | None = None     # E[min(G(t)+, K(t))] 미수에 묶인 자본 (원). L-076
     op_times: np.ndarray | None = None         # 운영위험 자본 격자 (년, 0 ~ N년). L-090
     op_capital: np.ndarray | None = None       # 운영위험 필요자본 (원)
@@ -308,7 +309,7 @@ def run(deal: Deal, m: MarketData, p: BankParams) -> Run:
         end = ends[id(tr)]
         if cp.csa.ccp:      # 은행이 CCP에 일방 납부, 받는 IM 없음
             ccy = tr.legs[0].ccy
-            im_post = ccp_im_profile(tr, times, m, s.sigma[ccy], p.ccp_im_mpor_days, p.ccp_im_conf)
+            im_post = ccp_im_profile(tr, times, m, s.rate_vol[ccy], p.ccp_im_mpor_days, p.ccp_im_conf)
             im_recv = np.zeros_like(times)
         elif cp.csa.vm and cp.csa.im:   # 양방향 SIMM, 같은 금액
             im_post = im_recv = im_profile(tr, times, m, p.simm_version)
@@ -375,7 +376,7 @@ def run(deal: Deal, m: MarketData, p: BankParams) -> Run:
     net_path = _pair_mean(day1 - path_cost, p.antithetic)
     client_v = values["고객"]
     mc_check = None
-    if p.rate_mean_reversion < 0:   # 음수 평균회귀(M14 허용 범위)일 때만 시뮬레이션 수렴을 점검한다
+    if min(s.kappa.values()) < 0:   # 음수 평균회귀(M14 허용 범위)일 때만 시뮬레이션 수렴을 점검한다
         checks = [mc_martingale_check(values[name], trade_forward_value(tr, m, times), p.antithetic)
                   for name, _, tr in parties]
         mc_check = max(checks, key=lambda c: c[0] / max(c[1], 1))
@@ -388,7 +389,7 @@ def run(deal: Deal, m: MarketData, p: BankParams) -> Run:
         vm_posted=np.maximum(vm_net, 0).mean(axis=0), vm_received=np.maximum(-vm_net, 0).mean(axis=0),
         fund_need=need, fund_surplus=surplus, fund_expected=expected_b, im=im_dealer, ftp=sp,
         funding_rate=r, disc=disc, net_se=float(net_path.std(ddof=1) / np.sqrt(len(net_path))), params=p, mc_check=mc_check,
-        tied_capital=tied.mean(axis=0), receivable_rate=r_d, op_times=op_t, op_capital=op_k, op_rate=op_r,
+        kappa=dict(s.kappa), tied_capital=tied.mean(axis=0), receivable_rate=r_d, op_times=op_t, op_capital=op_k, op_rate=op_r,
     )
 
 

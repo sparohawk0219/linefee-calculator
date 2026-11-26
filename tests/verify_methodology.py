@@ -262,7 +262,7 @@ def ccp_im_check():
     m = load()
     c = irs_trade(m, "KRW", 5.0)
     s = simulate(m, c.currencies, m.end_time(c), BankParams(n_paths=1000), local=True)
-    im = ccp_im_profile(c, s.times, m, s.sigma["KRW"])
+    im = ccp_im_profile(c, s.times, m, s.rate_vol["KRW"])
     print(f"  CCP IM t=0 {im[0] / OKU:.2f}억 (명목 대비 {im[0] / 1000e8:.2%})")
 
 

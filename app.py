@@ -534,8 +534,17 @@ with st.sidebar:
                                    key="adm_n_paths")
         vol_scale = st.number_input("금리 변동성 배수", value=sp.rate_vol_scale, min_value=0.0, step=0.1,
                                     key="adm_vol_scale")
-        kappa = st.number_input("금리 평균회귀 (연)", value=sp.rate_mean_reversion, step=0.01, key="adm_kappa")
-        if kappa < 0:
+        est_k = (m.hist or {}).get("kappa", {})
+        kappa_auto = st.checkbox("금리 평균회귀: 과거 데이터 추정값 사용", value=sp.rate_mean_reversion is None,
+                                 key="adm_kappa_auto",
+                                 help="스냅샷의 2·5·10·20·30년 금리 변동성 비율로 추정한 통화별 kappa (M26). "
+                                      "추정값이 없는 스냅샷이면 0. sigma는 10년 금리 변동성을 유지하도록 다시 맞춘다")
+        if kappa_auto:
+            st.caption("스냅샷 추정 kappa: " + (", ".join(f"{c} {v:+.3f}" for c, v in est_k.items()) if est_k
+                                                else "없음 (다만기 과거 금리를 받은 스냅샷이 아님) → 0"))
+        kappa = None if kappa_auto else st.number_input(
+            "금리 평균회귀 (연, 모든 통화)", value=float(sp.rate_mean_reversion or 0.0), step=0.01, key="adm_kappa")
+        if kappa is not None and kappa < 0:
             st.warning("음수 평균회귀는 금리 요인이 시간이 갈수록 발산하는 모형입니다. 계산은 그대로 하지만 비현실적인 값일 수 있습니다.")
         draft_params = replace(
             sp, capital_ratio=cap_ratio / 100, hurdle_after_tax=hurdle / 100, tax_rate=tax / 100,
@@ -989,7 +998,7 @@ if res:
                 "0% 미만 (전 구간 손실)" if hb is None else (f"{hb:.1%}" if hb < 0.5 else "50% 이상 (전 구간 이익)"),
                 f"입력 {rp.hurdle_after_tax:.1%}", delta_color="off")
     if r.mc_check and r.mc_check[0] >= max(3, 0.1 * r.mc_check[1]):
-        st.warning(f"음수 평균회귀(연 {rp.rate_mean_reversion:+.2f})에서 시뮬레이션이 수렴하지 않았습니다: 경로 평균 시가가 "
+        st.warning(f"음수 평균회귀(연 {min((r.kappa or {0: 0.0}).values()):+.2f})에서 시뮬레이션이 수렴하지 않았습니다: 경로 평균 시가가 "
                    f"오늘 커브의 선도가치와 {r.mc_check[1]}개 시점 중 {r.mc_check[0]}개에서 표준오차 3배 넘게 다릅니다. "
                    "화면의 표준오차는 이 편향을 반영하지 않아 작게 보일 수 있습니다. 이 결과는 신뢰하기 어렵습니다 "
                    "(만기가 길고 음수 평균회귀가 클수록 심함).")

@@ -28,10 +28,11 @@ class Scenario:
     x: dict                           # 통화 -> (경로 x 시점) 금리 요인
     var: dict                         # 통화 -> (시점) Var[x]
     fx: dict                          # 통화 -> (경로 x 시점) 1단위당 원화. KRW = 1
-    kappa: float
+    kappa: dict                       # 통화 -> 금리 평균회귀 kappa (rate_kappas)
     corr: np.ndarray
     labels: list
-    sigma: dict = None                # 통화 -> 금리 요인 연 변동성
+    sigma: dict = None                # 통화 -> 금리 요인 연 변동성 (kappa != 0이면 10년 변동성 유지로 다시 맞춘 값)
+    rate_vol: dict = None             # 통화 -> 10년 금리 연 변동성 (과거 추정 x 배수. 평행이동 근사 CCP IM에 쓴다)
 
 
 def _nearest_corr(c: np.ndarray) -> np.ndarray:
@@ -43,11 +44,32 @@ def _nearest_corr(c: np.ndarray) -> np.ndarray:
     return c2 / np.outer(d, d)
 
 
+REF_TENOR = 10.0     # 과거 변동성 추정 만기 (년). kappa가 있으면 이 만기 제로금리 변동성을 유지하도록 sigma를 맞춘다 (M26)
+
+
+def rate_kappas(m: MarketData, ccys, p: BankParams, local: bool = False) -> dict:
+    """통화별 금리 평균회귀 kappa. 관리자 입력(p.rate_mean_reversion)이 있으면 모든 통화에 그 값,
+    없으면(None) 스냅샷 과거 추정치(hist['kappa'], M26. local이면 KRW는 KRW IRS 추정치 'KRW_irs'), 추정치가 없으면 0(Ho-Lee).
+    """
+    if p.rate_mean_reversion is not None:
+        return {c: float(p.rate_mean_reversion) for c in ccys}
+    est = (m.hist or {}).get("kappa", {})
+    return {c: float(est.get(f"{c}_irs" if local and c == "KRW" and f"{c}_irs" in est else c, 0.0)) for c in ccys}
+
+
+def hw_sigma_scale(kappa: float, ref: float = REF_TENOR) -> float:
+    """기준 만기 제로금리 변동성 = sigma x B(ref)/ref 를 유지하는 sigma 배수 = ref kappa / (1 - e^{-ref kappa}). kappa = 0이면 1."""
+    if abs(kappa) < KAPPA_EPS:
+        return 1.0
+    return float(ref * kappa / (1 - np.exp(-ref * kappa)))
+
+
 def factor_setup(m: MarketData, ccys: set, maturity: float, p: BankParams,
                  local: bool = False) -> tuple[list, dict, np.ndarray]:
-    """(요인 이름, 금리 변동성, 상관행렬). 금리 요인은 거래 통화 + KRW, 환율 요인은 KRW 외 통화.
+    """(요인 이름, 금리 변동성(10년물 과거 추정 x 배수), 상관행렬). 금리 요인은 거래 통화 + KRW, 환율 요인은 KRW 외 통화.
 
     local=True (CCP 청산 원화 IRS 등): KRW 금리 변동성을 KRW IRS 10년물 추정치(r_KRW_irs)로 쓴다.
+    kappa에 따른 요인 sigma 조정(hw_sigma_scale)은 simulate에서 한다.
     """
     labels = [f"r_{c}" for c in ("USD", "KRW", "JPY") if c in ccys or c == "KRW"]
     labels += [f"fx_{c}" for c in ("USD", "JPY") if c in ccys]
@@ -105,7 +127,9 @@ def simulate(m: MarketData, ccys: set, horizon: float, p: BankParams, local: boo
     n = max(int(np.ceil(horizon / p.dt - 1e-9)), p.min_steps)
     times = np.linspace(0.0, horizon, n + 1)
     dt = times[1] - times[0]
-    labels, sigma, corr = factor_setup(m, ccys, horizon, p, local)
+    labels, rate_vol, corr = factor_setup(m, ccys, horizon, p, local)
+    kap = rate_kappas(m, rate_vol, p, local)
+    sigma = {c: v * hw_sigma_scale(kap[c]) for c, v in rate_vol.items()}   # 10년 변동성 유지 (M26)
     rng = np.random.default_rng(p.seed)
     chol = np.linalg.cholesky(corr).T
     if p.antithetic:
@@ -121,7 +145,7 @@ def simulate(m: MarketData, ccys: set, horizon: float, p: BankParams, local: boo
     for k, lab in enumerate(labels):
         kind, c = lab.split("_")
         if kind == "r":
-            x[c], var[c] = _ou(z[:, :, k], sigma[c], p.rate_mean_reversion, dt)
+            x[c], var[c] = _ou(z[:, :, k], sigma[c], kap[c], dt)
         else:
             tv = fx_total_variance(m, c, times)
             sd = np.sqrt(np.diff(tv))
@@ -129,18 +153,18 @@ def simulate(m: MarketData, ccys: set, horizon: float, p: BankParams, local: boo
             w = np.hstack([np.zeros((n_paths, 1)), np.cumsum(z[:, :, k] * sd, axis=1)])
             fx[c] = m.fwd_fx(c, times)[None, :] * np.exp(w - 0.5 * tv[None, :])
     # quanto: 외화 금리 요인 평균을 -Cov(W_c, x_c)로 옮긴다. 공분산은 OU 감쇠를 따라 쌓인다
-    kappa = p.rate_mean_reversion
-    decay = np.exp(-kappa * dt)
     for c, sd in fx_sd.items():
         if c not in x:
             continue
+        kappa = kap[c]
+        decay = np.exp(-kappa * dt)
         rho = corr[labels.index(f"r_{c}"), labels.index(f"fx_{c}")]
         sdx = _step_sd(sigma[c], kappa, dt)
         cov = np.zeros(n + 1)
         for i in range(n):
             cov[i + 1] = cov[i] * decay + rho * sd[i] * sdx
         x[c] = x[c] - cov[None, :]
-    return Scenario(times, x, var, fx, p.rate_mean_reversion, corr, labels, sigma)
+    return Scenario(times, x, var, fx, kap, corr, labels, sigma, rate_vol)
 
 
 def _b(tau: np.ndarray, kappa: float) -> np.ndarray:
@@ -175,7 +199,7 @@ def leg_value_paths(leg: Leg, trade: Trade, m: MarketData, s: Scenario,
     disc = m.disc_for(leg)
     sc = m.schedule(trade, leg)
     pay, start, accr = sc.pay, sc.start, sc.accr
-    k = s.kappa
+    k = s.kappa[leg.ccy]
     out = np.zeros((s.x[leg.ccy].shape[0], len(s.times)))
     for i, t in enumerate(s.times):
         live = pay > t - LIVE_EPS

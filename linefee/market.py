@@ -71,6 +71,55 @@ HIST_TICKERS = {
 # 시뮬레이션 요인 이름: 금리 r_{통화}, 환율 fx_{통화} (KRW 대비)
 FACTORS = ["r_USD", "r_KRW", "r_JPY", "fx_USD", "fx_JPY"]
 
+# 금리 평균회귀 kappa 추정용 다만기 과거 금리 (DECISIONS M26, Run C L-078). 기존 커브 티커를 재사용한다.
+# 요인별로 sigma와 같은 상품: r_USD SOFR OIS, r_KRW KRW CCS(USD 담보), r_JPY TONA OIS + 베이시스, r_KRW_irs KRW IRS(CD)
+KAPPA_TENORS = [2, 5, 10, 20, 30]
+KAPPA_TICKERS = {
+    "USD": {n: [f"USOSFR{n} Curncy"] for n in KAPPA_TENORS},
+    "KRW": {n: [f"KRWNSQ{n} Curncy"] for n in KAPPA_TENORS},
+    "JPY": {n: [f"JYSO{n} Curncy", f"JYBSS{n}Y Curncy"] for n in KAPPA_TENORS},   # OIS(%) + 베이시스(bp)
+    "KRW_irs": {n: [f"KWSWO{n} Curncy"] for n in KAPPA_TENORS},
+}
+KAPPA_BOUNDS = (-0.10, 0.50)   # 추정 범위 (연). 음수는 M14 허용 범위
+
+
+def hw_vol_ratio(tau, kappa: float) -> np.ndarray:
+    """1요인 Hull-White(평행이동 요인 x)에서 만기 tau 제로금리 변동성 / 요인 변동성 = B(tau) / tau.
+
+    B(tau) = (1 - e^{-kappa tau}) / kappa (kappa = 0이면 tau). 제로금리 = -ln P / tau 이고 ln P가 -B(tau) x로 움직이므로.
+    """
+    tau = np.asarray(tau, dtype=float)
+    if abs(kappa) < 1e-12:
+        return np.ones_like(tau)
+    return (1 - np.exp(-kappa * tau)) / (kappa * tau)
+
+
+def estimate_kappa(vols: dict, ref: float = 10.0) -> float:
+    """만기별 금리 변화 변동성 {만기(년): 연 변동성}에서 1요인 Hull-White kappa를 추정한다.
+
+    vol(tau) ∝ B(tau)/tau (hw_vol_ratio)이므로 기준 만기 대비 비율 vol(tau)/vol(ref)를 모형 비율에 로그 최소제곱으로 맞춘다.
+    근사: 스왑 금리 변화를 같은 만기 제로금리 변화로 본다(만기 사이 커브 기울기 변화를 1요인이 흡수). KAPPA_BOUNDS 안에서 격자 + 이분.
+    """
+    taus = np.array(sorted(t for t in vols if t != ref), dtype=float)
+    obs = np.log(np.array([vols[t] for t in taus]) / vols[ref])
+
+    def loss(k):
+        return float(np.sum((obs - np.log(hw_vol_ratio(taus, k) / hw_vol_ratio(ref, k))) ** 2))
+
+    grid = np.linspace(*KAPPA_BOUNDS, 601)
+    k0 = grid[int(np.argmin([loss(k) for k in grid]))]
+    lo, hi = max(k0 - 0.001, KAPPA_BOUNDS[0]), min(k0 + 0.001, KAPPA_BOUNDS[1])
+    for _ in range(60):   # 황금분할
+        a, b = lo + 0.382 * (hi - lo), lo + 0.618 * (hi - lo)
+        lo, hi = (lo, b) if loss(a) < loss(b) else (a, hi)
+    return float((lo + hi) / 2)
+
+
+def kappa_from_levels(levels: dict) -> tuple[float, dict]:
+    """{만기: 주간 금리 수준(소수) 배열} -> (kappa, {만기: 연 변동성}). 변동성 = 주간 차분 표준편차 x sqrt(52)."""
+    vols = {t: float(np.diff(v).std(ddof=1) * np.sqrt(52)) for t, v in levels.items()}
+    return estimate_kappa(vols), vols
+
 
 def snapshot_guide(path: Path) -> str:
     """스냅샷 파일이 없을 때 보이는 안내 (앱·테스트 공통)."""
@@ -159,6 +208,25 @@ def fetch(years: int = 5, path: Path = SNAPSHOT) -> dict:
         "sigma": dict(zip(FACTORS, map(float, vol))) | {"r_KRW_irs": irs_vol},  # 금리: 연 정규(소수), 환율: 로그
         "corr": np.corrcoef(x).round(6).tolist(),
     }
+    # 금리 평균회귀 kappa (M26): 요인별 2·5·10·20·30년 금리의 주간 변동성 비율로 추정. 못 받은 만기가 있으면 그 요인은 건너뛴다
+    kappa, kvols = {}, {}
+    for f, group in KAPPA_TICKERS.items():
+        try:
+            raw_k = {n: [dict(bdh(t, "PX_LAST", start.strftime("%Y%m%d"), end.strftime("%Y%m%d"))) for t in ts]
+                     for n, ts in group.items()}
+        except Exception:
+            continue
+        kdays = sorted(set.intersection(*(set(s) for v in raw_k.values() for s in v)))
+        kfri = [d for d in kdays if d.weekday() == 4]
+        if len(kfri) < 52 or any(not s for v in raw_k.values() for s in v):
+            continue
+        lv = {n: (np.array([v[0][d] for d in kfri]) + (np.array([v[1][d] for d in kfri]) / 100 if len(v) > 1 else 0))
+              / 100 for n, v in raw_k.items()}   # JPY: OIS(%) + 베이시스(bp)/100 -> %
+        kappa[f], kvols[f] = kappa_from_levels(lv)
+    if kappa:
+        snap["hist"]["kappa"] = kappa
+        snap["hist"]["kappa_vols"] = {f: {str(n): v for n, v in d.items()} for f, d in kvols.items()}
+        snap["hist"]["kappa_tickers"] = {f: {str(n): ts for n, ts in g.items()} for f, g in KAPPA_TICKERS.items()}
     check_snapshot(snap)   # 필수 호가가 빠졌으면 여기서 예외: 기존 파일은 그대로 둔다 (L-022)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(snap, indent=2, ensure_ascii=False), encoding="utf-8")

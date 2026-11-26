@@ -192,8 +192,12 @@ def load_params() -> BankParams:
     except (OSError, ValueError):
         return base
     kinds = {f.name: type(getattr(base, f.name)) for f in fields(BankParams)}
+    kinds["rate_mean_reversion"] = float   # 기본값 None(과거 추정 사용) 또는 관리자 입력 실수 (M26)
     upd = {}
     for k, v in (saved.items() if isinstance(saved, dict) else []):
+        if k == "rate_mean_reversion" and v is None:
+            upd[k] = None
+            continue
         t = kinds.get(k)
         if t is None or isinstance(v, bool) != (t is bool):
             continue
