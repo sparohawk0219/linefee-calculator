@@ -10,6 +10,8 @@ import os
 import re
 from pathlib import Path
 
+from linefee.bank_el import notional_krw  # noqa: F401  거래 명목(원화). 은행 관리회계 E/L과 같은 정의 (여기서 다시 내보낸다)
+
 ROOT = Path(__file__).resolve().parent.parent
 FILE_NAME = "여신환산율.xlsx"
 ROWS = ("금리", "외환")
@@ -61,11 +63,6 @@ def load_table(path: Path | None = None) -> dict | None:
     return None
 
 
-def notional_krw(trade, spot: dict) -> float:
-    """거래 명목(원화). 통화스왑·FX 선도는 외화 다리 중 큰 쪽(SA-CCR 조정명목과 같은 방식), 그 밖은 첫 다리. spot: 통화 -> 1단위당 원화."""
-    foreign = [l for l in trade.legs if l.ccy != "KRW"]
-    legs = foreign if foreign and trade.product != "IRS" else trade.legs[:1]
-    return max(l.notional * spot[l.ccy] for l in legs)
 
 
 def usage(table: dict, product: str, maturity: float, notional_krw: float, v0_client_krw: float) -> dict:

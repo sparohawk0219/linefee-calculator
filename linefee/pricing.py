@@ -162,6 +162,7 @@ class Run:
     op_capital: np.ndarray | None = None       # 운영위험 필요자본 (원)
     op_rate: np.ndarray | None = None          # 그 격자의 KVA 조달금리 r(t)
     receivable_rate: np.ndarray | None = None  # r_d(t) 미수의 할인 이자율, 구간 [t, t+dt]
+    ee: dict | None = None                     # "고객"·"딜러" -> 시점별 E[max(V, 0)] (원, 담보 전). 은행 관리회계 E/L 비교용 (bank_el)
     params: BankParams = field(repr=False, default=None)
 
     def _sum(self, prefix: str) -> float:
@@ -389,6 +390,7 @@ def run(deal: Deal, m: MarketData, p: BankParams) -> Run:
         vm_posted=np.maximum(vm_net, 0).mean(axis=0), vm_received=np.maximum(-vm_net, 0).mean(axis=0),
         fund_need=need, fund_surplus=surplus, fund_expected=expected_b, im=im_dealer, ftp=sp,
         funding_rate=r, disc=disc, net_se=float(net_path.std(ddof=1) / np.sqrt(len(net_path))), params=p, mc_check=mc_check,
+        ee={name: np.maximum(values[name], 0).mean(axis=0) for name, _, _ in parties},
         kappa=dict(s.kappa), tied_capital=tied.mean(axis=0), receivable_rate=r_d, op_times=op_t, op_capital=op_k, op_rate=op_r,
     )
 

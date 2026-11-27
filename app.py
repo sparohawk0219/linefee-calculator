@@ -15,6 +15,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+import linefee.bank_el
 import linefee.curves
 import linefee.engine
 import linefee.market
@@ -25,7 +26,7 @@ import linefee.trade
 # 서버 실행 중 엔진 파일이 바뀌면 다시 읽는다. Streamlit은 app.py만 다시 실행하고
 # 이미 import한 하위 모듈은 그대로 둘 수 있어, 바뀐 계산 코드가 반영되지 않는 경우가 있었다.
 _ENGINE = ["linefee.curves", "linefee.market", "linefee.trade", "linefee.engine", "simm", "linefee.regcap",
-           "linefee.pricing"]   # simm은 linefee.regcap이 from simm import ...로 묶으므로 그보다 먼저
+           "linefee.pricing", "linefee.bank_el"]   # simm은 linefee.regcap이 from simm import ...로 묶으므로 그보다 먼저
 
 
 @st.cache_resource
@@ -47,6 +48,7 @@ _reload_engine_if_changed()
 
 from linefee.market import (LEGACY_SNAPSHOT, SNAPSHOT, fetch, load, load_legacy,  # noqa: E402  (다시 읽은 뒤 이름을 묶는다)
                             snapshot_guide)
+from linefee.bank_el import bank_el  # noqa: E402
 from linefee.engine import trade_value_today  # noqa: E402
 from linefee.pricing import (Run, annual_pnl, breakeven, fee_unit_pv, market_gap,  # noqa: E402
                              market_hedge, par_client, run)
@@ -766,7 +768,8 @@ with b:
         st.caption(f"{CCP_NAME}. VM {IRS_CONV[product][0]} 현금 일일 정산, IM 은행 일방 납부(5영업일 99% VaR 근사), "
                    "SA-CCR MPOR 10영업일(별표3 296.사)")
         dealer = Counterparty(CCP_NAME, CCP_RW, 0.0, 0.0, 0.6,
-                              CSA(vm=True, im=False, reg_mpor_days=CCP_REG_MPOR_DAYS, ccy=IRS_CONV[product][0], ccp=True))
+                              CSA(vm=True, im=False, reg_mpor_days=CCP_REG_MPOR_DAYS, ccy=IRS_CONV[product][0], ccp=True),
+                              interbank=True)
     else:
         dl_names = [n for n, r in master.items() if store.is_dealer(r)]
         if not dl_names:
@@ -939,7 +942,47 @@ if st.button("계산", type="primary"):
                                           hedge_kind=hedge_kind, loc=loc_key, fee=fee_delta(client_trade, fee_in),
                                           upfront=upfront * OKU, unit_pv=fee_unit_pv(deal, m), is_fx=is_fx,
                                           qu=QU, client_no_fee=client_trade, params=params, sig=sig, product_key=product,
-                                          ccf=ccf_use)
+                                          ccf=ccf_use, bank=bank_el(deal, m, base))
+
+def bank_el_section(res, r, be, deal, conv, fmt, UL):
+    """은행 관리회계 방식 E/L 비교 (DECISIONS M30). 라인피 계산과 별개의 참고 표시."""
+    bk = res["bank"]
+    line_fee = res["hedge_kind"] in ("btb", "line", "ccp") and res["loc"] != "upfront"
+    with st.expander("은행 관리회계 기준 E/L 비교 (CEM, 매월 일할, 은행간 30%, 자본비용 없음)"):
+        bank_net = r.day1 - bk.total
+        k = st.columns(3)
+        k[0].metric("은행식 E/L 합계 (할인 전)", f"{bk.total / OKU:,.2f}억", f"{conv(bk.total):+.2f} {UL}", delta_color="off",
+                    help=f"현재가치로는 {bk.pv / OKU:,.2f}억 ({conv(bk.pv):+.2f} {UL})")
+        k[1].metric("은행식 관리회계 손익", f"{bank_net / OKU:,.2f}억", f"자본비용 반영 손익 {r.net / OKU:,.2f}억과 비교",
+                    delta_color="off", help="첫날 이익 - 은행식 E/L 합계 (할인 전). FTP 조달비용은 넣지 않았다")
+        if line_fee:
+            need_bank = res["fee"] + (bk.total - r.day1) / res["unit_pv"]
+            need_ours = res["fee"] + be.extra
+            k[2].metric("은행식 손익분기 라인피", fmt(need_bank), f"우리 방식 {fmt(need_ours)} (차이 {fmt(need_ours - need_bank)})",
+                        delta_color="off", help="은행식 관리회계 손익 = 0이 되는 라인피. 라인피가 익스포저를 바꾸는 효과는 뺀 선형 근사")
+        rows = []
+        for p in bk.parties:
+            rows.append({"상대방": f"{p.name} ({deal.client.name if p.name == '고객' else deal.dealer.name})",
+                         "은행간": "예" if p.interbank else "아니오", "PD (하한 0.03%)": f"{p.pd:.2%}", "LGD": f"{p.lgd:.0%}",
+                         "부과 비율": f"{p.weight:.0%}", "거래일 EAD 억": (p.rc[0] + p.addon[0]) / OKU,
+                         "은행식 합계 억 (할인 전)": p.total / OKU, "은행식 현재가치 억": p.pv / OKU,
+                         "우리 E/L 억": r.costs.get(f"E/L ({p.name})", 0.0) / OKU})
+        st.dataframe(pd.DataFrame(rows).style.format({c: "{:,.2f}" for c in rows[0] if c.endswith("억") or "억 " in c}),
+                     hide_index=True, width="stretch")
+        st.markdown(f"우리 방식에서 은행식에 없는 비용: KVA **{r.kva / OKU:,.2f}억** ({conv(r.kva):+.2f} {UL}), "
+                    f"FVA {r.funding / OKU:,.2f}억 ({conv(r.funding):+.2f} {UL}). "
+                    f"E/L은 우리 {r.el / OKU:,.2f}억 vs 은행식 현재가치 {bk.pv / OKU:,.2f}억")
+        ann = pd.DataFrame(bk.annual())
+        for c in ann.columns:
+            if c != "연도":
+                ann[c] = ann[c] / OKU
+        ann["합계"] = ann.drop(columns="연도").sum(axis=1)
+        st.markdown("**연도별 은행식 E/L 부과액** (억원, 할인 전)")
+        st.dataframe(ann.style.format({c: "{:,.3f}" for c in ann.columns if c != "연도"}), hide_index=True, width="stretch")
+        st.caption("CEM EAD = 기대 재조달비용 E[max(시가, 0)] + 명목(원화) x 가산율(잔존만기 1년 이하·5년 이하·5년 초과: "
+                   "금리 0%·0.5%·1.5%, 외환 1%·5%·7.5%). 매월 PD x LGD x EAD x 일수/365를 떼고 더한다 (기대값, 할인 없음). "
+                   "VM 담보 상대방은 재조달비용 0, 가산율만. 은행간은 업종이 금융기관인 상대방과 CCP. 라인피 계산에는 쓰지 않는다.")
+
 
 res = st.session_state.get("result")
 if res and (not isinstance(res["base"], Run) or "sig" not in res):
@@ -1148,6 +1191,8 @@ if res:
             pnl[c] = pnl[c] / OKU
         st.dataframe(pnl.style.format({c: "{:,.2f}" for c in pnl.columns if c != "연도"}),
                      hide_index=True, width="stretch")
+    if res.get("bank") is not None:
+        bank_el_section(res, r, be, deal, conv, fmt, UL)
     if be is not None:
         with st.expander("손익분기 반복 기록"):
             st.dataframe(pd.DataFrame([{f"조정 ({UL})": d * (qu if fx_mode else 1e4), "순마진 (억원)": rr.net / OKU}

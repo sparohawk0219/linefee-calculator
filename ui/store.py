@@ -191,7 +191,8 @@ def counterparty(row: dict) -> Counterparty:
     irb = (row.get("rw_method") or "고정") == "IRB"
     sales = parse_sales(row.get("sales_eok"))   # check_row를 통과한 행이므로 숫자 또는 빈 칸
     return Counterparty(row["name"], float(row["credit_rw_pct"]) / 100, cva, float(row["pd_pct"]) / 100, LGD,
-                        replace(csa), irb=irb, sales_eok=sales)
+                        replace(csa), irb=irb, sales_eok=sales,
+                        interbank=row["ba_cva_sector"] == "금융기관(정부보증 금융 포함)")
 
 
 # ---------------------------------------------------------------------------

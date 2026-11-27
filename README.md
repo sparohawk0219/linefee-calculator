@@ -50,6 +50,7 @@ Python 3.10 이상.
     python -m tests.test_irb              # 기본내부등급법 RW
     python -m tests.test_regcap_floor     # SA-CCR 만기 하한
     python -m tests.test_score            # 상대방 점수
+    python -m tests.test_bank_el          # 은행 관리회계 E/L 비교 (CEM)
 
 스냅샷이 필요하다 (없으면 안내를 출력하고 멈춘다):
 

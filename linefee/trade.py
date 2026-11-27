@@ -109,6 +109,7 @@ class Counterparty:
     irb: bool = False            # True면 credit_rw 대신 기본내부등급법 RW (별표3 120, PD 하한 0.05%, 감독 LGD)
     irb_lgd: float = 0.40        # 기본내부등급법 감독 LGD: 기업 40%, 금융기관 45% (별표3 124.나)
     sales_eok: float | None = None   # 연 매출액 (억원). 700억 이하면 중소기업 상관계수 조정 (별표3 120.나)
+    interbank: bool = False      # 은행간(금융기관·CCP) 상대방. 은행 관리회계 E/L 비교(bank_el, M30)에서 30%만 부과. 라인피 계산에는 안 쓴다
 
 
 def untradable(cp: "Counterparty") -> str | None:
